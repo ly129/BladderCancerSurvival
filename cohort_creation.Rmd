@@ -1,0 +1,105 @@
+---
+title: "Bladder Cancer Survival Cohort Creation and Descriptive Analysis"
+output: html_document
+date: "2024-10-03"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## 1 Cohort Creation
+## 1.1 Inclusion-exclusion
+### 1.1.1 Inclusion
+`Enhanced_AdvUrothelial.csv` data with all advanced UC patients.
+```{r}
+setwd("~/Library/CloudStorage/Box-Box/RWD/BladderCancerSurvival/code/")
+eauc <- read.csv("../Bladder/Enhanced_AdvUrothelial.csv")
+eauc$Surgery <- as.logical(eauc$Surgery)
+eauc$AdvancedDiagnosisDate <- as.Date(eauc$AdvancedDiagnosisDate)
+eauc$SurgeryDate <- as.Date(eauc$SurgeryDate)
+```
+`Enhanced_AdvUrothelial.csv` contains `r length(unique(eauc$PatientID))` patients.
+
+### 1.1.2 Exclusion 1: patients diagnosed with advanced urothelial cancinoma outside of 01/01/2011 - 12/01/2021
+
+```{r echo = FALSE}
+ptid <- subset(eauc, subset = AdvancedDiagnosisDate >= as.Date("2011-01-01") & 
+                 AdvancedDiagnosisDate <= as.Date("2021-12-01"))$PatientID
+# length(ptid)
+```
+A total of `r length(ptid)` patients diagnosed within the time range.
+
+### 1.1.3 Exclusion 2: patients who have taken clinical study drug anytime during follow-up
+Cross-referencing `LineOfTherapy.csv`.
+```{r}
+lineoftherapy <- read.csv("../Bladder/LineOfTherapy.csv")
+
+lineoftherapy$StartDate <- as.Date(lineoftherapy$StartDate)
+lineoftherapy$EndDate <- as.Date(lineoftherapy$EndDate)
+lineoftherapy$IsMaintenanceTherapy <- as.logical(lineoftherapy$IsMaintenanceTherapy)
+```
+```{r}
+unique.therapy <- unique(lineoftherapy$LineName)
+csd <- unique.therapy[grep("Clinical", unique.therapy)]
+ptid.csd <- unique(subset(lineoftherapy, LineName %in% csd)$PatientID)
+ptid <- setdiff(ptid, ptid.csd)
+```
+Down to `r length(ptid)` patients.
+
+### 1.1.4 Exclusion 3: untreated patients
+```{r}
+ptid.treated <- unique(lineoftherapy$PatientID)
+ptid <- intersect(ptid, ptid.treated)
+```
+Down to `r length(ptid)` patients.
+
+### 1.1.5 Dataset to be linked with other data tables
+```{r}
+dd <- subset(eauc,
+             PatientID %in% ptid,
+             select = c("PatientID", 
+                        "AdvancedDiagnosisDate",
+                        "PrimarySite",
+                        "GroupStage",
+                        "SmokingStatus",
+                        "Surgery",
+                        "SurgeryDate",
+                        "SurgeryType"))
+head(dd)
+```
+
+## 1.2 Endpoint
+```{r}
+mortality <- read.csv("../Bladder/Enhanced_Mortality_V2.csv")
+oral <- read.csv("../Bladder/Enhanced_AdvUrothelial_Orals.csv")
+oral$StartDate <- as.Date(oral$StartDate)
+visit <- read.csv("../Bladder/visit.csv")
+visit$VisitDate <- as.Date(visit$VisitDate)
+drugepisode <- read.csv("../Bladder/DrugEpisode.csv")
+drugepisode$EpisodeDate <- as.Date(drugepisode$EpisodeDate)
+# only to the month - set to the 15th of each month
+mortality$DateOfDeath <- paste0(mortality$DateOfDeath, "-15")
+
+mortality$DateOfDeath <- as.Date(mortality$DateOfDeath)
+
+dd <- merge(dd, mortality, all.x = TRUE)
+dd$Death <- !is.na(dd$DateOfDeath)
+
+pt.censored <- dd$PatientID[!dd$Death]
+for (pp in pt.censored) {
+  date.oral <- oral$StartDate[oral$PatientID == pp]
+  date.visit <- visit$VisitDate[visit$PatientID == pp]
+  date.episode <- drugepisode$EpisodeDate[drugepisode$PatientID == pp]
+  date.advdiagnosis <- dd$AdvancedDiagnosisDate[dd$PatientID == pp]
+  censored.date <- max(c(date.oral, date.visit, date.episode, date.advdiagnosis))
+  dd$DateOfDeath[dd$PatientID == pp] <- censored.date
+}
+
+names(dd)[ncol(dd) - 1] <- "EventDate"
+
+head(dd)
+```
+
+
+## 1.3 Extract potential confounders from other data files.
