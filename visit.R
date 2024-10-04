@@ -1,4 +1,4 @@
-setwd("~/Library/CloudStorage/Box-Box/RWD/BladderCancerSurvival/code/")
+setwd("~/Library/CloudStorage/Box-Box/RWD/BladderCancerSurvival/BladderCancerSurvival/")
 
 # visit date, type, ...
 # 550K + records

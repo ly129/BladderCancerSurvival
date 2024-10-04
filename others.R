@@ -1,4 +1,4 @@
-setwd("~/Library/CloudStorage/Box-Box/RWD/BladderCancerSurvival/code/")
+setwd("~/Library/CloudStorage/Box-Box/RWD/BladderCancerSurvival/BladderCancerSurvival/")
 
 # everyone is "BLADDER"
 enhancedcohort <- read.csv("../Bladder/EnhancedCohort.csv")

@@ -1,4 +1,4 @@
-setwd("~/Library/CloudStorage/Box-Box/RWD/BladderCancerSurvival/code/")
+setwd("~/Library/CloudStorage/Box-Box/RWD/BladderCancerSurvival/BladderCancerSurvival/")
 
 progression <- read.csv("../Bladder/Enhanced_AdvUrothelial_Progression.csv")
 dim(progression)

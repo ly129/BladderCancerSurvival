@@ -1,4 +1,4 @@
-setwd("~/Library/CloudStorage/Box-Box/RWD/BladderCancerSurvival/code/")
+setwd("~/Library/CloudStorage/Box-Box/RWD/BladderCancerSurvival/BladderCancerSurvival/")
 
 # Records are included for each documented ECOG observation for each patient in the cohort. Records are excluded if they are not a valid ECOG value or if EcogDate is after the data cutoff date or NULL.
 ecog <- read.csv("../Bladder/ECOG.csv")

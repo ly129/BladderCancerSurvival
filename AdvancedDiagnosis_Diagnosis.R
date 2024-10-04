@@ -1,4 +1,4 @@
-setwd("~/Library/CloudStorage/Box-Box/RWD/BladderCancerSurvival/code/")
+setwd("~/Library/CloudStorage/Box-Box/RWD/BladderCancerSurvival/BladderCancerSurvival/")
 
 # Diagnosis contains multiple diagnoses per patient
 diagnosis <- read.csv("../Bladder/Diagnosis.csv")

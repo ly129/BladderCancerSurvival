@@ -1,4 +1,4 @@
-setwd("~/Library/CloudStorage/Box-Box/RWD/BladderCancerSurvival/code/")
+setwd("~/Library/CloudStorage/Box-Box/RWD/BladderCancerSurvival/BladderCancerSurvival/")
 
 sdoh <- read.csv("../Bladder/SocialDeterminantsOfHealth.csv")
 # very clean data, one patient per record

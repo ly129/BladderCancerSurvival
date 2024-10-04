@@ -1,4 +1,4 @@
-setwd("~/Library/CloudStorage/Box-Box/RWD/BladderCancerSurvival/code/")
+setwd("~/Library/CloudStorage/Box-Box/RWD/BladderCancerSurvival/BladderCancerSurvival/")
 
 # 8767 deaths, with year-month of death
 mortality <- read.csv("../Bladder/Enhanced_Mortality_V2.csv")

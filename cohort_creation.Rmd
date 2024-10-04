@@ -13,7 +13,7 @@ knitr::opts_chunk$set(echo = FALSE)
 ### 1.1.1 Inclusion
 `Enhanced_AdvUrothelial.csv` data with all advanced UC patients.
 ```{r}
-setwd("~/Library/CloudStorage/Box-Box/RWD/BladderCancerSurvival/code/")
+setwd("~/Library/CloudStorage/Box-Box/RWD/BladderCancerSurvival/BladderCancerSurvival/")
 eauc <- read.csv("../Bladder/Enhanced_AdvUrothelial.csv")
 eauc$Surgery <- as.logical(eauc$Surgery)
 eauc$AdvancedDiagnosisDate <- as.Date(eauc$AdvancedDiagnosisDate)

@@ -1,4 +1,4 @@
-setwd("~/Library/CloudStorage/Box-Box/RWD/BladderCancerSurvival/code/")
+setwd("~/Library/CloudStorage/Box-Box/RWD/BladderCancerSurvival/BladderCancerSurvival/")
 
 biomarker <- read.csv("../Bladder/Enhanced_AdvUrothelialBiomarkers.csv")
 # eauc <- read.csv("../Bladder/Enhanced_AdvUrothelial.csv")

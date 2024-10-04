@@ -4,7 +4,7 @@
 
 # 1. Build around Enhanced_AdvUrothelial.csv, which includes advanced UC patients
 
-setwd("~/Library/CloudStorage/Box-Box/RWD/BladderCancerSurvival/code/")
+setwd("~/Library/CloudStorage/Box-Box/RWD/BladderCancerSurvival/BladderCancerSurvival/")
 
 eauc <- read.csv("../Bladder/Enhanced_AdvUrothelial.csv")
 
@@ -205,7 +205,6 @@ dd$PracticeType <- factor(dd$PracticeType)
 dd$Chemotherapy <- dd$Immunotherapy <- dd$AntibodyConjugate <- dd$OtherDrug <- FALSE
 dd$DrugTreatment <- TRUE
 
-# should probably consider therapies received after index date, i.e. AdvancedDiagnosisDate
 for (i in 1:nrow(dd)) {
   idtmp <- dd$PatientID[i]
   drugname.tmp <- subset(drugepisode, PatientID == idtmp)$DrugName
@@ -215,7 +214,7 @@ for (i in 1:nrow(dd)) {
     dd$Chemotherapy[i] <- TRUE
   }
   
-  if (any(drugname.tmp %in% c("pembrolizumab", "avelumab", "atezolizumab", "nivolumab"))) {
+  if (any(drugname.tmp %in% c("pembrolizumab", "avelumab", "atezolizumab", "nivolumab", "durvalumab"))) {
     dd$Immunotherapy[i] <- TRUE
   }
   
@@ -370,6 +369,12 @@ insurance.unique <- aggregate(PayerCategory ~ PatientID + StartDate, data = insu
 
 dd <- dd |>
   left_join(select(insurance.unique, c(PatientID, StartDate, PayerCategory)), join_by(PatientID == PatientID, closest(AdvancedDiagnosisDate > StartDate)))
+
+summary(dd)
+dd$PrimarySite <- factor(dd$PrimarySite)
+dd$GroupStage <- factor(dd$GroupStage)
+dd$SurgeryDate <- as.Date(dd$SurgeryDate)
+dd$SurgeryType <- factor(dd$SurgeryType)
 
 # table 1
 library(table1)

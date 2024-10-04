@@ -5,7 +5,7 @@
 # Build around Enhanced_AdvUrothelial.csv, which includes advanced UC patients
 # 1. In Enhanced_AdvUrothelial, find pts with GroupStage IV
 
-setwd("~/Library/CloudStorage/Box-Box/RWD/BladderCancerSurvival/code/")
+setwd("~/Library/CloudStorage/Box-Box/RWD/BladderCancerSurvival/BladderCancerSurvival/")
 
 eauc <- read.csv("../Bladder/Enhanced_AdvUrothelial.csv")
 
