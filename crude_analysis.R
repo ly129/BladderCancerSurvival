@@ -186,7 +186,7 @@ no.rx[is.na(no.rx)] <- 0
 
 no.rx <- subset(no.rx, AdvancedDiagnosisYear <= LineStartYear)
 
-no.rx <- no.rx[order(no.rx$LineStartYear, decreasing = TRUE), ]
+# no.rx <- no.rx[order(no.rx$LineStartYear, decreasing = TRUE), ]
 
 no.rx
 

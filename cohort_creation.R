@@ -12,26 +12,19 @@ eauc <- read.csv("../Bladder/Enhanced_AdvUrothelial.csv")
 ## 12681 patients
 nrow(eauc) == length(unique(eauc$PatientID))
 
-# Diagnosis of AdvUC on or after January 1, 2011
-## change DiagnosisDate to date format
-## DiagnosisDate: date of initial diagnosis
-eauc$DiagnosisDate <- as.Date(eauc$DiagnosisDate)
 eauc$Surgery <- as.logical(eauc$Surgery)
-summary(eauc$DiagnosisDate)
 ## AdvancedDiagnosisDate: date of diagnosis of advanced disease
-### inconsistent with GroupStage
 eauc$AdvancedDiagnosisDate <- as.Date(eauc$AdvancedDiagnosisDate)
-summary(eauc$AdvancedDiagnosisDate)
 
-# 2. Diagnosed after 2011-01-01, before 2021-12-01
+# 2. Diagnosed after 2011-01-01, before 2022-12-01
 ## everyone has advanced diagnosis after 20110101 - granted data starts 20110101
 min(eauc$AdvancedDiagnosisDate)
 max(eauc$AdvancedDiagnosisDate) # 2023-06-27
 
 ptid <- subset(eauc, subset = AdvancedDiagnosisDate >= as.Date("2011-01-01") & 
-                              AdvancedDiagnosisDate <= as.Date("2021-12-01"))$PatientID
+                 AdvancedDiagnosisDate <= as.Date("2022-12-01"))$PatientID
 length(ptid)
-# down to 11276
+# down to 12321
 
 # # Maybe this is wrong. eauc contains advanced UC, so everyone is advanced.
 # # Diagnosis of primary UC with distant metastasis defined as stage IV.
@@ -94,14 +87,14 @@ ptid <- setdiff(ptid, ptid.csd)
 # No more Clinical Study Drug
 # table(subset(lineoftherapy, PatientID %in% ptid)$LineName)
 
-# 10742 after removing patients who have taken clinical study drug
+# 11765 after removing patients who have taken clinical study drug
 length(ptid)
 
 # 4. exclude untreated patients
 ptid.treated <- unique(lineoftherapy$PatientID)
 ptid <- intersect(ptid, ptid.treated)
 
-# 7429 after removing untreated patients
+# 8193 after removing untreated patients
 length(ptid)
 
 
@@ -126,7 +119,10 @@ source("visit.R")
 source("drugepisode.R")
 source("mortality.R")
 
-dd <- subset(eauc, PatientID %in% ptid)
+dd <- subset(eauc,
+             PatientID %in% ptid,
+             select = c(PatientID, AdvancedDiagnosisDate, PrimarySite,
+                        GroupStage, SmokingStatus, Surgery))
 
 dd <- merge(dd, mortality, all.x = TRUE)
 
@@ -143,7 +139,7 @@ for (pp in pt.censored) {
   dd$DateOfDeath[dd$PatientID == pp] <- censored.date
 }
 
-names(dd)[ncol(dd) - 1] <- "EventDate"
+names(dd)[ncol(dd) - 1] <- "DeathCensorDate"
 
 ###############################################################
 # crude analyses show no improvements in survival
@@ -168,7 +164,7 @@ dd$Gender <- factor(dd$Gender)
 dd$Race <- factor(dd$Race)
 dd$Location <- factor(dd$Location)
 
-dd$StageAtDiagnosis <- "Unknown/not documented"
+dd$StageAtDiagnosis <- NA
 for (i in 1:nrow(dd)) {
   if (dd$GroupStage[i] %in% c("Stage 0a", "Stage 0is")) dd$StageAtDiagnosis[i] <- "Stage0"
   if (dd$GroupStage[i] %in% c("Stage I")) dd$StageAtDiagnosis[i] <- "Stage1"
@@ -177,8 +173,13 @@ for (i in 1:nrow(dd)) {
   if (dd$GroupStage[i] %in% c("Stage IV", "Stage IVA", "Stage IVB")) dd$StageAtDiagnosis[i] <- "Stage4"
 }
 dd$StageAtDiagnosis <- factor(dd$StageAtDiagnosis)
+dd <- subset(dd, select = -GroupStage)
 
-dd$SmokingStatus <- factor(dd$SmokingStatus)
+dd$SmokingHistory <- NA
+dd$SmokingHistory <- ifelse(dd$SmokingStatus == "History of smoking", TRUE, FALSE)
+dd <- subset(dd, select = -SmokingStatus)
+
+dd$PrimarySite <- factor(dd$PrimarySite)
 
 # practice type -- ever treated in academic
 source("practice.R")
@@ -203,7 +204,6 @@ dd$PracticeType <- factor(dd$PracticeType)
 
 # source("drugepisode.R")
 dd$Chemotherapy <- dd$Immunotherapy <- dd$AntibodyConjugate <- dd$OtherDrug <- FALSE
-dd$DrugTreatment <- TRUE
 
 for (i in 1:nrow(dd)) {
   idtmp <- dd$PatientID[i]
@@ -223,9 +223,9 @@ for (i in 1:nrow(dd)) {
   }
 }
 
-# sdoh
-source("sdoh.R")
-dd <- merge(dd, sdoh, all.x = TRUE)
+# # sdoh
+# source("sdoh.R")
+# dd <- merge(dd, sdoh, all.x = TRUE)
 
 # biomarker (fgfr, pdl1 mutation)
 source("biomarker.R")
@@ -266,82 +266,95 @@ fgfr <- fgfr[!duplicated(fgfr), ]
 dd <- merge(dd, pdl1, all.x = TRUE)
 dd <- merge(dd, fgfr, all.x = TRUE)
 
-# insurance
-
-
-# Elixhauser comorbidity
-source("diagnosis.R")
-
-# use baseline comorbidity (before advanced diagnosis date) and remove urothelial cancer
-dx <- subset(diagnosis, DiagnosisCodeSystem == "ICD-10-CM")
-dx <- subset(dx, PatientID %in% ptid)
-dx <- subset(dx, !is.na(dx$DiagnosisDate))
-
-icd10.all <- unique(dx$DiagnosisCode)
-icd10.cancer <- icd10.all[regexpr("C", icd10.all) == 1]
-icd10.uc <- c(icd10.cancer[grep("C67", icd10.cancer)],
-              icd10.cancer[grep("C65", icd10.cancer)],
-              icd10.cancer[grep("C66", icd10.cancer)],
-              "C68.0")
-dx <- subset(dx, !DiagnosisCode %in% icd10.uc)
-
-dx.before.index <- logical(nrow(dx))
-for (i in 1:nrow(dx)) {
-  row.tmp <- dx[i, ]
-  adv.dx.date <- subset(dd, PatientID == row.tmp$PatientID)$AdvancedDiagnosisDate
-  if (row.tmp$DiagnosisDate < adv.dx.date) {
-    dx.before.index[i] <- TRUE
-  } else {
-    dx.before.index[i] <- FALSE
-  }
-}
-dx <- dx[dx.before.index, ]
-  
-library(comorbidity)
-
-icd10 <- dx[, c("PatientID", "DiagnosisCode")]
-icd10 <- icd10[complete.cases(icd10), ]
-
-icd10$DiagnosisCode <- gsub("\\.", "", icd10$DiagnosisCode)
-
-elix <- comorbidity(icd10,
-                    "PatientID",
-                    "DiagnosisCode",
-                    map = "elixhauser_icd10_quan",
-                    assign0 = TRUE)
-elix.score <- score(elix, assign0 = TRUE)
-elix.score <- data.frame(PatientID = elix$PatientID, Elixhauser = elix.score)
-
-# # then use ICD9 for chose with missingness
-# icd9 <- subset(diagnosis, DiagnosisCodeSystem == "ICD-9-CM")
+# comorbidity needs attention
+# # Elixhauser comorbidity
+# source("diagnosis.R")
 # 
-# icd9 <- icd9[, c("PatientID", "DiagnosisCode")]
-# icd9 <- icd9[complete.cases(icd9), ]
+# # use baseline comorbidity (before advanced diagnosis date) and remove urothelial cancer
+# # dx <- subset(diagnosis, DiagnosisCodeSystem == "ICD-10-CM")
+# # dx <- subset(dx, PatientID %in% ptid)
+# # dx <- subset(dx, !is.na(dx$DiagnosisDate))
+# # 
+# # icd10.all <- unique(dx$DiagnosisCode)
+# # icd10.cancer <- icd10.all[regexpr("C", icd10.all) == 1]
+# # icd10.uc <- c(icd10.cancer[grep("C67", icd10.cancer)],
+# #               icd10.cancer[grep("C65", icd10.cancer)],
+# #               icd10.cancer[grep("C66", icd10.cancer)],
+# #               "C68.0")
+# # dx <- subset(dx, !DiagnosisCode %in% icd10.uc)
+# # 
+# # dx.before.index <- logical(nrow(dx))
+# # for (i in 1:nrow(dx)) {
+# #   row.tmp <- dx[i, ]
+# #   adv.dx.date <- subset(dd, PatientID == row.tmp$PatientID)$AdvancedDiagnosisDate
+# #   if (row.tmp$DiagnosisDate < adv.dx.date) {
+# #     dx.before.index[i] <- TRUE
+# #   } else {
+# #     dx.before.index[i] <- FALSE
+# #   }
+# # }
+# # dx <- dx[dx.before.index, ]
 # 
-# icd9$DiagnosisCode <- gsub("\\.", "", icd9$DiagnosisCode)
+# # remove DiagnosisDate
+# dd <- dd[, -2]
 # 
-# elix <- comorbidity(icd9,
+# dx <- diagnosis %>%
+#   inner_join(dd, by = "PatientID") %>%
+#   filter(DiagnosisDate <= AdvancedDiagnosisDate)
+# 
+# icd10.all <- unique(dx$DiagnosisCode)
+# icd10.cancer <- icd10.all[regexpr("C", icd10.all) == 1]
+# icd10.uc <- c(icd10.cancer[grep("C67", icd10.cancer)],
+#               icd10.cancer[grep("C65", icd10.cancer)],
+#               icd10.cancer[grep("C66", icd10.cancer)],
+#               "C68.0")
+# dx <- subset(dx, !DiagnosisCode %in% icd10.uc)
+# 
+# library(comorbidity)
+# 
+# icd10 <- dx[, c("PatientID", "DiagnosisCode")]
+# icd10 <- icd10[complete.cases(icd10), ]
+# 
+# icd10$DiagnosisCode <- gsub("\\.", "", icd10$DiagnosisCode)
+# 
+# elix <- comorbidity(icd10,
 #                     "PatientID",
 #                     "DiagnosisCode",
-#                     map = "elixhauser_icd9_quan",
+#                     map = "elixhauser_icd10_quan",
 #                     assign0 = TRUE)
-# elix.score.9 <- score(elix, assign0 = TRUE)
+# elix.score <- score(elix, assign0 = TRUE)
+# elix.score <- data.frame(PatientID = elix$PatientID, Elixhauser = elix.score)
 # 
-# elix.score.9 <- data.frame(PatientID = elix$PatientID, Elixhauser = elix.score.9)
+# # # then use ICD9 for chose with missingness
+# # icd9 <- subset(diagnosis, DiagnosisCodeSystem == "ICD-9-CM")
+# # 
+# # icd9 <- icd9[, c("PatientID", "DiagnosisCode")]
+# # icd9 <- icd9[complete.cases(icd9), ]
+# # 
+# # icd9$DiagnosisCode <- gsub("\\.", "", icd9$DiagnosisCode)
+# # 
+# # elix <- comorbidity(icd9,
+# #                     "PatientID",
+# #                     "DiagnosisCode",
+# #                     map = "elixhauser_icd9_quan",
+# #                     assign0 = TRUE)
+# # elix.score.9 <- score(elix, assign0 = TRUE)
+# # 
+# # elix.score.9 <- data.frame(PatientID = elix$PatientID, Elixhauser = elix.score.9)
+# # 
+# # use9 <- setdiff(elix.score.9$PatientID, elix.score.10$PatientID)
+# # 
+# # elix.score <- rbind(elix.score.10,
+# #                     subset(elix.score.9, PatientID %in% use9))
 # 
-# use9 <- setdiff(elix.score.9$PatientID, elix.score.10$PatientID)
 # 
-# elix.score <- rbind(elix.score.10,
-#                     subset(elix.score.9, PatientID %in% use9))
+# dd <- merge(dd, elix.score, all.x = TRUE)
+# # end of comorbidity
 
-
-dd <- merge(dd, elix.score, all.x = TRUE)
-# end of comorbidity
-
-# add lines of treatment received
-lot <- subset(lineoftherapy, PatientID %in% ptid)
-no.lines <- aggregate(LineNumber ~ PatientID, FUN = max, data = lot)
-dd <- merge(dd, no.lines, all.x = TRUE)
+# # add lines of treatment received
+# lot <- subset(lineoftherapy, PatientID %in% ptid)
+# no.lines <- aggregate(LineNumber ~ PatientID, FUN = max, data = lot)
+# dd <- merge(dd, no.lines, all.x = TRUE)
 
 # add ecog at diagnosis
 source("ecog.R")
@@ -351,30 +364,33 @@ ecog.unique <- aggregate(EcogValue ~ PatientID + EcogDate, data = ecog, FUN = ma
 
 dd <- dd |>
   left_join(ecog.unique, join_by(PatientID == PatientID, closest(AdvancedDiagnosisDate > EcogDate))) # %>%
-  # Filter the rows where the diagnosis date is within the insurance coverage period
-  # filter(EcogDate < AdvancedDiagnosisDate)
+# Filter the rows where the diagnosis date is within the insurance coverage period
+# filter(EcogDate < AdvancedDiagnosisDate)
 
 # add insurance at diagnosis
+# last one prior to advanced diagnosis date
 source("insurance.R")
 # multiple insurance on the same day for some patients
-insurance$PayerCategory <- factor(insurance$PayerCategory, levels = names(sort(table(insurance$PayerCategory), decreasing = FALSE)))
-select.insurance <- function(x) {
-  if (length(x) > 1) {
-    sort(x)[1]
-  } else {
-    x
-  }
-}
-insurance.unique <- aggregate(PayerCategory ~ PatientID + StartDate, data = insurance, FUN = select.insurance)
+ins <- insurance[, c("PatientID", "PayerCategory", "StartDate")]
+ins$Insurance <- ifelse(ins$PayerCategory %in% c("Medicaid", "Medicare", "Other Government Program"),
+                        "Government",
+                        ifelse(ins$PayerCategory %in% c("Commercial Health Plan"), "Commercial", "Other"))
+ins$Insurance <- factor(ins$Insurance, levels = c("Government", "Commercial", "Other"))
+ins <- subset(ins, select = -PayerCategory)
+# multiple insurance with the same start date
+ins <- unique(ins)
+ins <- aggregate(Insurance ~ PatientID + StartDate,
+                 data = ins,
+                 FUN = function(x) {names(which.max(table(x)))})
 
 dd <- dd |>
-  left_join(select(insurance.unique, c(PatientID, StartDate, PayerCategory)), join_by(PatientID == PatientID, closest(AdvancedDiagnosisDate > StartDate)))
+  left_join(select(ins, c(PatientID, StartDate, Insurance)),
+            join_by(PatientID == PatientID, closest(AdvancedDiagnosisDate > StartDate)))
 
 summary(dd)
-dd$PrimarySite <- factor(dd$PrimarySite)
-dd$GroupStage <- factor(dd$GroupStage)
-dd$SurgeryDate <- as.Date(dd$SurgeryDate)
-dd$SurgeryType <- factor(dd$SurgeryType)
+dd$Insurance <- factor(dd$Insurance)
+
+
 
 # table 1
 library(table1)
@@ -395,36 +411,17 @@ pvalue <- function(x, ...) {
   c("", sub("<", "&lt;", format.pval(p, digits=3, eps=0.001)))
 }
 
-table1(~ AgeAtDiagnosis + Gender + Race + SmokingStatus + Location + SESIndex2015_2019 + PracticeType + PrimarySite + StageAtDiagnosis + LineNumber + Surgery + PDL1 + FGFR + Elixhauser + EcogValue + PayerCategory| DiagnosisPeriod,
+table1(~ Gender + Race + StageAtDiagnosis + AgeAtDiagnosis + EcogValue + SmokingHistory + Location + Insurance + PracticeType + PrimarySite + Surgery + Chemotherapy + Immunotherapy | DiagnosisPeriod,
        # data = subset(dd, DiagnosisPeriod %in% c("Before ICI", "After ADC")),
        data = dd,
        overall = FALSE,
        extra.col = list(`P-value` = pvalue))
+
+
 
 # fewer has surgery
 # more likely to be diagnosed during earlier stages
 # higher elixhauser comorbidity score
 # # this is suspicious
 # more likely to have PDL1 FGFR mutation checked
-
-
-table(dd$Immunotherapy, dd$StageAtDiagnosis)
-table(dd$AntibodyConjugate, dd$StageAtDiagnosis)
-
-
-table(dd$Immunotherapy, dd$AdvancedDiagnosisYear)
-table(dd$AntibodyConjugate, dd$AdvancedDiagnosisYear)
-
-
-
-
-
-prop.table(table(dd$Immunotherapy, dd$StageAtDiagnosis), margin = 1)
-
-
-# survival of advanced diagnosis 
-
-
-
-
 
