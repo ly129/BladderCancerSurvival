@@ -13,18 +13,19 @@ eauc <- read.csv("../Bladder/Enhanced_AdvUrothelial.csv")
 nrow(eauc) == length(unique(eauc$PatientID))
 
 eauc$Surgery <- as.logical(eauc$Surgery)
+eauc$SurgeryDate <- as.Date(eauc$SurgeryDate)
 ## AdvancedDiagnosisDate: date of diagnosis of advanced disease
 eauc$AdvancedDiagnosisDate <- as.Date(eauc$AdvancedDiagnosisDate)
 
-# 2. Diagnosed after 2011-01-01, before 2022-12-01
+# 2. Diagnosed after 2011-01-01, before 2021-12-01
 ## everyone has advanced diagnosis after 20110101 - granted data starts 20110101
 min(eauc$AdvancedDiagnosisDate)
 max(eauc$AdvancedDiagnosisDate) # 2023-06-27
 
 ptid <- subset(eauc, subset = AdvancedDiagnosisDate >= as.Date("2011-01-01") & 
-                 AdvancedDiagnosisDate <= as.Date("2022-12-01"))$PatientID
+                 AdvancedDiagnosisDate <= as.Date("2021-12-01"))$PatientID
 length(ptid)
-# down to 12321
+# down to 11276
 
 # # Maybe this is wrong. eauc contains advanced UC, so everyone is advanced.
 # # Diagnosis of primary UC with distant metastasis defined as stage IV.
@@ -87,15 +88,17 @@ ptid <- setdiff(ptid, ptid.csd)
 # No more Clinical Study Drug
 # table(subset(lineoftherapy, PatientID %in% ptid)$LineName)
 
-# 11765 after removing patients who have taken clinical study drug
+# 10742 after removing patients who have taken clinical study drug
 length(ptid)
 
-# 4. exclude untreated patients
-ptid.treated <- unique(lineoftherapy$PatientID)
-ptid <- intersect(ptid, ptid.treated)
-
-# 8193 after removing untreated patients
-length(ptid)
+# ### do not remove untreated ###
+# # 4. exclude untreated patients
+# ptid.treated <- unique(lineoftherapy$PatientID)
+# ptid <- intersect(ptid, ptid.treated)
+# 
+# # 7429 after removing untreated patients
+# length(ptid)
+# ### do not remove untreated ###
 
 
 # # 5. exclude patients with less than two years of followup
@@ -113,6 +116,7 @@ length(ptid)
 
 # Find censoring date and event date (death)
 # Define censoring date as the latest of Visit, Enhanced_AdvUrothelial_Orals and DrugEpisode
+# add initiation of ICI and ADC for historical cohorts
 # and AdvancedDiagnosisDate itself
 source("oral.R")
 source("visit.R")
@@ -122,7 +126,7 @@ source("mortality.R")
 dd <- subset(eauc,
              PatientID %in% ptid,
              select = c(PatientID, AdvancedDiagnosisDate, PrimarySite,
-                        GroupStage, SmokingStatus, Surgery))
+                        GroupStage, SmokingStatus, Surgery, SurgeryDate))
 
 dd <- merge(dd, mortality, all.x = TRUE)
 
@@ -145,7 +149,10 @@ names(dd)[ncol(dd) - 1] <- "DeathCensorDate"
 # crude analyses show no improvements in survival
 ###############################################################
 
-dd$DiagnosisPeriod <- ifelse(dd$AdvancedDiagnosisDate < as.Date("2016-05-18"), "Before ICI", ifelse(dd$AdvancedDiagnosisDate > as.Date("2019-12-18"), "After ADC", "Between ICI & ADC"))
+dd$DiagnosisPeriod <- ifelse(dd$AdvancedDiagnosisDate < as.Date("2016-05-18"),
+                             "Before ICI", ifelse(dd$AdvancedDiagnosisDate > as.Date("2019-12-18"),
+                                                  "After ADC",
+                                                  "Between ICI & ADC"))
 
 dd$DiagnosisPeriod <- factor(dd$DiagnosisPeriod, levels = c("Before ICI", "Between ICI & ADC", "After ADC"))
 
@@ -201,9 +208,13 @@ for (i in 1:length(unique(practice$PatientID))) {
 dd <- merge(dd, prac, all.x = TRUE)
 dd$PracticeType <- factor(dd$PracticeType)
 
+library(dplyr)
 
 # source("drugepisode.R")
-dd$Chemotherapy <- dd$Immunotherapy <- dd$AntibodyConjugate <- dd$OtherDrug <- FALSE
+drugepi <- drugepisode %>%
+  inner_join(dd, by = "PatientID") %>%
+  filter(LineStartDate >= AdvancedDiagnosisDate)
+dd$Chemotherapy <- dd$Immunotherapy <- dd$AntibodyConjugate <- FALSE
 
 for (i in 1:nrow(dd)) {
   idtmp <- dd$PatientID[i]
@@ -226,47 +237,47 @@ for (i in 1:nrow(dd)) {
 # # sdoh
 # source("sdoh.R")
 # dd <- merge(dd, sdoh, all.x = TRUE)
+# 
+# # biomarker (fgfr, pdl1 mutation)
+# source("biomarker.R")
+# bm <- subset(biomarker, PatientID %in% dd$PatientID)
+# bm <- subset(bm, !BiomarkerStatus %in% c("No interpretation given in report",
+#                                          "Unknown",
+#                                          "Unsuccessful/indeterminate test",
+#                                          "Results pending",
+#                                          "PD-L1 equivocal"))
+# pdl1 <- subset(bm, BiomarkerName == "PDL1")
+# fgfr <- subset(bm, BiomarkerName == "FGFR")
+# 
+# pdl1$PDL1 <- ifelse(pdl1$BiomarkerStatus == "PD-L1 positive", TRUE, FALSE)
+# fgfr$FGFR <- ifelse(fgfr$BiomarkerStatus == "Positive", TRUE, FALSE)
+# 
+# ## multiple records for some patients
+# ## if there are both positive and negative, set to positive
+# ## interpretation: ever positive during followup
+# pdl1.unique <- unique(pdl1$PatientID)
+# for (pt in pdl1.unique) {
+#   pdl1.tmp <- subset(pdl1, PatientID == pt)
+#   results <- pdl1.tmp$PDL1
+#   if (length(unique(results)) != 1) pdl1[pdl1$PatientID == pt, "PDL1"] <- TRUE
+# }
+# pdl1 <- pdl1[, c("PatientID", "PDL1")]
+# 
+# fgfr.unique <- unique(fgfr$PatientID)
+# for (pt in fgfr.unique) {
+#   fgfr.tmp <- subset(fgfr, PatientID == pt)
+#   results <- fgfr.tmp$FGFR
+#   if (length(unique(results)) != 1) fgfr[fgfr$PatientID == pt, "FGFR"] <- TRUE
+# }
+# fgfr <- fgfr[, c("PatientID", "FGFR")]
+# 
+# pdl1 <- pdl1[!duplicated(pdl1), ]
+# fgfr <- fgfr[!duplicated(fgfr), ]
+# 
+# dd <- merge(dd, pdl1, all.x = TRUE)
+# dd <- merge(dd, fgfr, all.x = TRUE)
 
-# biomarker (fgfr, pdl1 mutation)
-source("biomarker.R")
-bm <- subset(biomarker, PatientID %in% dd$PatientID)
-bm <- subset(bm, !BiomarkerStatus %in% c("No interpretation given in report",
-                                         "Unknown",
-                                         "Unsuccessful/indeterminate test",
-                                         "Results pending",
-                                         "PD-L1 equivocal"))
-pdl1 <- subset(bm, BiomarkerName == "PDL1")
-fgfr <- subset(bm, BiomarkerName == "FGFR")
-
-pdl1$PDL1 <- ifelse(pdl1$BiomarkerStatus == "PD-L1 positive", TRUE, FALSE)
-fgfr$FGFR <- ifelse(fgfr$BiomarkerStatus == "Positive", TRUE, FALSE)
-
-## multiple records for some patients
-## if there are both positive and negative, set to positive
-## interpretation: ever positive during followup
-pdl1.unique <- unique(pdl1$PatientID)
-for (pt in pdl1.unique) {
-  pdl1.tmp <- subset(pdl1, PatientID == pt)
-  results <- pdl1.tmp$PDL1
-  if (length(unique(results)) != 1) pdl1[pdl1$PatientID == pt, "PDL1"] <- TRUE
-}
-pdl1 <- pdl1[, c("PatientID", "PDL1")]
-
-fgfr.unique <- unique(fgfr$PatientID)
-for (pt in fgfr.unique) {
-  fgfr.tmp <- subset(fgfr, PatientID == pt)
-  results <- fgfr.tmp$FGFR
-  if (length(unique(results)) != 1) fgfr[fgfr$PatientID == pt, "FGFR"] <- TRUE
-}
-fgfr <- fgfr[, c("PatientID", "FGFR")]
-
-pdl1 <- pdl1[!duplicated(pdl1), ]
-fgfr <- fgfr[!duplicated(fgfr), ]
-
-dd <- merge(dd, pdl1, all.x = TRUE)
-dd <- merge(dd, fgfr, all.x = TRUE)
-
-# comorbidity needs attention
+# # comorbidity needs attention
 # # Elixhauser comorbidity
 # source("diagnosis.R")
 # 
@@ -274,7 +285,7 @@ dd <- merge(dd, fgfr, all.x = TRUE)
 # # dx <- subset(diagnosis, DiagnosisCodeSystem == "ICD-10-CM")
 # # dx <- subset(dx, PatientID %in% ptid)
 # # dx <- subset(dx, !is.na(dx$DiagnosisDate))
-# # 
+# #
 # # icd10.all <- unique(dx$DiagnosisCode)
 # # icd10.cancer <- icd10.all[regexpr("C", icd10.all) == 1]
 # # icd10.uc <- c(icd10.cancer[grep("C67", icd10.cancer)],
@@ -282,7 +293,7 @@ dd <- merge(dd, fgfr, all.x = TRUE)
 # #               icd10.cancer[grep("C66", icd10.cancer)],
 # #               "C68.0")
 # # dx <- subset(dx, !DiagnosisCode %in% icd10.uc)
-# # 
+# #
 # # dx.before.index <- logical(nrow(dx))
 # # for (i in 1:nrow(dx)) {
 # #   row.tmp <- dx[i, ]
@@ -294,9 +305,6 @@ dd <- merge(dd, fgfr, all.x = TRUE)
 # #   }
 # # }
 # # dx <- dx[dx.before.index, ]
-# 
-# # remove DiagnosisDate
-# dd <- dd[, -2]
 # 
 # dx <- diagnosis %>%
 #   inner_join(dd, by = "PatientID") %>%
@@ -327,23 +335,23 @@ dd <- merge(dd, fgfr, all.x = TRUE)
 # 
 # # # then use ICD9 for chose with missingness
 # # icd9 <- subset(diagnosis, DiagnosisCodeSystem == "ICD-9-CM")
-# # 
+# #
 # # icd9 <- icd9[, c("PatientID", "DiagnosisCode")]
 # # icd9 <- icd9[complete.cases(icd9), ]
-# # 
+# #
 # # icd9$DiagnosisCode <- gsub("\\.", "", icd9$DiagnosisCode)
-# # 
+# #
 # # elix <- comorbidity(icd9,
 # #                     "PatientID",
 # #                     "DiagnosisCode",
 # #                     map = "elixhauser_icd9_quan",
 # #                     assign0 = TRUE)
 # # elix.score.9 <- score(elix, assign0 = TRUE)
-# # 
+# #
 # # elix.score.9 <- data.frame(PatientID = elix$PatientID, Elixhauser = elix.score.9)
-# # 
+# #
 # # use9 <- setdiff(elix.score.9$PatientID, elix.score.10$PatientID)
-# # 
+# #
 # # elix.score <- rbind(elix.score.10,
 # #                     subset(elix.score.9, PatientID %in% use9))
 # 
@@ -358,7 +366,6 @@ dd <- merge(dd, fgfr, all.x = TRUE)
 
 # add ecog at diagnosis
 source("ecog.R")
-library(dplyr)
 # multiple ecog value on the same day for some patients
 ecog.unique <- aggregate(EcogValue ~ PatientID + EcogDate, data = ecog, FUN = max)
 
@@ -411,7 +418,10 @@ pvalue <- function(x, ...) {
   c("", sub("<", "&lt;", format.pval(p, digits=3, eps=0.001)))
 }
 
-table1(~ Gender + Race + StageAtDiagnosis + AgeAtDiagnosis + EcogValue + SmokingHistory + Location + Insurance + PracticeType + PrimarySite + Surgery + Chemotherapy + Immunotherapy | DiagnosisPeriod,
+table1(~ Gender + Race + StageAtDiagnosis + AgeAtDiagnosis + EcogValue +
+         SmokingHistory + Location + Insurance + PracticeType + PrimarySite +
+         Surgery + # PDL1 + FGFR + Elixhauser + 
+         Chemotherapy + Immunotherapy + AntibodyConjugate| DiagnosisPeriod,
        # data = subset(dd, DiagnosisPeriod %in% c("Before ICI", "After ADC")),
        data = dd,
        overall = FALSE,

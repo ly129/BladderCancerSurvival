@@ -8,7 +8,7 @@ source("cohort_creation.R")
 library(survival)
 library(ggplot2)
 library(survminer)
-surv.dd <- with(dd, Surv(time = as.numeric(EventDate - AdvancedDiagnosisDate),
+surv.dd <- with(dd, Surv(time = as.numeric(DeathCensorDate - AdvancedDiagnosisDate),
                          event = Death))
 
 fit1 <- survfit(surv.dd ~ 1)
@@ -29,6 +29,7 @@ ggsurvplot(fit1,
 summary(fit1)$table
 summary(fit1,time=c(365.25))
 summary(fit1,time=c(365.25 * 2))
+print(fit1, rmean = 365)
 
 
 ggsurvplot(fit = survfit(surv.dd ~ 1), data = dd,
@@ -40,11 +41,11 @@ ggsurvplot(fit = survfit(surv.dd ~ 1), data = dd,
            ggtheme = theme_bw(), # Change ggplot2 theme
            palette = c("#E7B800", "#2E9FDF"))
 
-dd$PostICI <- dd$AdvancedDiagnosisDate > as.Date("2016-05-18")
-dd$PostADC <- dd$AdvancedDiagnosisDate > as.Date("2019-12-18")
 
 
-fit2 <- survfit(surv.dd ~ dd$PostICI)
+fit2 <- survfit(surv.dd ~ dd$DiagnosisPeriod)
+print(fit2, rmean = 365)
+print(fit2, rmean = 365 * 2)
 
 summary(fit2)$table
 summary(fit2,time=c(365.25))
@@ -61,9 +62,10 @@ ggsurvplot(fit = fit2,
            linetype = "strata", # Change line type by groups
            surv.median.line = "hv", # Specify median survival
            ggtheme = theme_bw(), # Change ggplot2 theme
-           palette = c("#E7B800", "#2E9FDF"),
+           palette = c("#E7B800", "#2E9FDF", "red"),
            risk.table.y.text = FALSE,
-           xlab = "Time in Days")
+           xlab = "Time in Days",
+           censor = TRUE)
 
 fit3 <- survfit(surv.dd ~ dd$PostADC)
 summary(fit3)$table

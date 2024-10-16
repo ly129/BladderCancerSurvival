@@ -28,7 +28,7 @@ for (i in 1:nrow(demographics)) {
   
   if (demographics$Race[i] == "") {
     demographics$Race[i] <- NA
-  } else if (demographics$Race[i] == "Hispanic or Latino") {
+  } else if (demographics$Race[i] %in% c("Hispanic or Latino", "Asian")) {
     demographics$Race[i] <- "Other Race"
   }
   
