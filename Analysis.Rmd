@@ -1,0 +1,922 @@
+---
+title: "Line1_Treated_NoCensor_ThreeCohorts"
+author: "Yi Lian"
+date: "2024-11-26"
+output:
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, cache=TRUE,  message=FALSE, warning=FALSE)
+setwd("~/Library/CloudStorage/Box-Box/RWD/BladderCancerSurvival/BladderCancerSurvival")
+library(dplyr)
+library(survival)
+library(ggplot2)
+library(survminer)
+```
+
+# 1. Load data
+
+```{r eaucdata}
+eauc <- read.csv("../Bladder/Enhanced_AdvUrothelial.csv")
+eauc$Surgery <- as.logical(eauc$Surgery)
+eauc$SurgeryDate <- as.Date(eauc$SurgeryDate)
+eauc$AdvancedDiagnosisDate <- as.Date(eauc$AdvancedDiagnosisDate)
+eauc$DiagnosisDate <- as.Date(eauc$DiagnosisDate)
+```
+
+```{r lineoftherapydata}
+lineoftherapy <- read.csv("../Bladder/LineOfTherapy.csv")
+lineoftherapy$StartDate <- as.Date(lineoftherapy$StartDate)
+lineoftherapy$EndDate <- as.Date(lineoftherapy$EndDate)
+lineoftherapy$IsMaintenanceTherapy <- as.logical(lineoftherapy$IsMaintenanceTherapy)
+```
+
+```{r drugepisodedata}
+drugepisode <- read.csv("../Bladder/DrugEpisode.csv")
+drugepisode$LineStartDate <- as.Date(drugepisode$LineStartDate)
+drugepisode$LineEndDate <- as.Date(drugepisode$LineEndDate)
+drugepisode$EpisodeDate <- as.Date(drugepisode$EpisodeDate)
+drugepisode$IsMaintenanceTherapy <- as.logical(drugepisode$IsMaintenanceTherapy)
+```
+
+```{r mortalitydata}
+mortality <- read.csv("../Bladder/Enhanced_Mortality_V2.csv")
+# only to the month - set to the 15th of each month
+mortality$DateOfDeath <- paste0(mortality$DateOfDeath, "-15")
+mortality$DateOfDeath <- as.Date(mortality$DateOfDeath)
+```
+
+```{r oraldata}
+oral <- read.csv("../Bladder/Enhanced_AdvUrothelial_Orals.csv")
+oral$StartDate <- as.Date(oral$StartDate)
+```
+
+```{r visitdata}
+visit <- read.csv("../Bladder/visit.csv")
+visit$VisitDate <- as.Date(visit$VisitDate)
+```
+
+```{r progressiondata}
+progression <- read.csv("../Bladder/Enhanced_AdvUrothelial_Progression.csv")
+progression$LastClinicNoteDate <- as.Date(progression$LastClinicNoteDate)
+progression$ProgressionDate <- as.Date(progression$ProgressionDate)
+```
+
+# 2. Inclusion and exclusion
+
+Begin with `r nrow(eauc)` patients.
+
+## 2.1 First line treatment start date bewteen 01/01/2011 and 03/01/2023
+- Implicitly excludes untreated patients
+```{r mergeline1date}
+line1 <- subset(lineoftherapy, LineNumber == 1, select = c(PatientID, StartDate))
+names(line1)[2] <- "Line1StartDate"
+line1 <- aggregate(Line1StartDate ~ PatientID, data = line1, FUN = min)
+auc <- subset(eauc, select = -c(DiseaseGrade, TStage, NStage, MStage, SurgeryType))
+auc <- merge(auc, line1, all.x = TRUE, by = "PatientID")
+```
+
+```{r line1date}
+auc <- subset(auc, subset = Line1StartDate >= as.Date("2011-01-01") & 
+                Line1StartDate <= as.Date("2023-03-01"))
+```
+Down to `r nrow(auc)` patients.
+
+<!-- ## 2.2 Implicitily exclude untreated patients -->
+<!-- ```{r line1dateexclusion} -->
+<!-- auc <- subset(auc, !is.na(auc$Line1StartDate)) -->
+<!-- ``` -->
+<!-- Down to `r nrow(auc)` patients. -->
+
+## 2.2 Remove patients who have received *clinical study drug*
+
+```{r}
+unique.therapy <- unique(lineoftherapy$LineName)
+csd <- unique.therapy[grep("Clinical", unique.therapy)]
+ptid.csd <- unique(subset(lineoftherapy, LineName %in% csd)$PatientID)
+auc <- subset(auc, !PatientID %in% ptid.csd)
+```
+Down to `r nrow(auc)` patients.
+
+# 3. Endpoint definition
+
+End of follow-up is the last interaction with a healthcare provider
+
+-   Event: death from `Enhanced_Mortality_V2.csv`.
+
+-   Censoring: the latest of
+
+    -   The last visit date in `Visit.csv`
+    -   The start date of the last oral drug in `Enhanced_AdvUrothelial_Orals.csv`
+    -   The episode date of the last drug episode in `DrugEpisode.csv`.
+    -   The `Line1StartDate`
+    -   The `LastClinicNoteDate` in `Enhanced_AdvUrothelial_Progression.csv`.
+
+```{r death}
+auc <- merge(auc, mortality, by = "PatientID", all.x = TRUE)
+```
+
+```{r visit-oral-episode}
+visit <- subset(visit, select = c(PatientID, VisitDate))
+oral <- subset(oral, select = c(PatientID, StartDate))
+drugepi <- subset(drugepisode, select = c(PatientID, EpisodeDate))
+progressiondate <- subset(progression, select = c(PatientID, LastClinicNoteDate))
+advdiagnosis <- subset(auc, select = c(PatientID, Line1StartDate))
+
+names(visit)[2] <- names(oral)[2] <- names(drugepi)[2] <- names(progressiondate)[2] <- names(advdiagnosis)[2] <- "LastDate"
+
+censoring.date <- rbind(visit, oral, drugepi, progressiondate, advdiagnosis)
+censoring.date <- aggregate(LastDate ~ PatientID, data = censoring.date, FUN = max)
+# auc <- merge(auc, visit, by = "PatientID", all.x = TRUE)
+
+auc <- merge(auc, censoring.date, by = "PatientID", all.x = TRUE)
+# head(auc)
+```
+
+```{r event_censoring_date}
+auc$Death <- !is.na(auc$DateOfDeath)
+# auc$CensoringDate <- auc$DateOfDeath
+# auc$CensoringDate[!auc$Death] <- auc$LastDate[!auc$Death]
+auc$CensoringDate <- as.Date(ifelse(is.na(auc$DateOfDeath), auc$LastDate, auc$DateOfDeath))
+```
+
+# 4. Crude analysis
+
+## 4.1 Define three cohorts based on Line 1 Start Date
+- ICI first approval on 05/18/2016
+- ADC first approval on 12/18/2019
+```{r diagnosis_period}
+auc$Line1StartPeriod <- ifelse(auc$Line1StartDate < as.Date("2016-05-18"),
+                              "Before ICI", ifelse(auc$Line1StartDate > as.Date("2019-12-18"),
+                                                   "After ADC",
+                                                   "Between ICI & ADC"))
+
+auc$Line1StartPeriod <- factor(auc$Line1StartPeriod, levels = c("Before ICI", "Between ICI & ADC", "After ADC"))
+```
+
+## 4.2 Analysis
+```{r crudeanalysis, warning=FALSE}
+auc.surv <- with(auc,
+                 Surv(time = as.integer(CensoringDate - Line1StartDate),
+                      event = Death))
+fit1 <- survfit(auc.surv ~ Line1StartPeriod, data = auc)
+
+ggsurvplot(fit = fit1, 
+           data = auc,
+           # xlim = c(0, 1000),
+           break.time.by = 365.25,
+           xscale = "d_y",
+           pval = TRUE,
+           conf.int = TRUE,
+           risk.table = TRUE, # Add risk table
+           risk.table.col = "strata", # Change risk table color by groups
+           # linetype = "strata", # Change line type by groups
+           surv.median.line = "hv", # Specify median survival
+           ggtheme = theme_bw(), # Change ggplot2 theme
+           palette = c("#E7B800", "#2E9FDF", "red"),
+           risk.table.y.text = FALSE,
+           xlab = "Time in Years",
+           censor = FALSE, fontsize = 2)
+```
+
+##### Crude median survival
+```{r crude-RMST}
+print(fit1)
+# print(fit1, rmean = 365)
+# print(fit1, rmean = 365 * 2)
+```
+##### Crude 3-yr survival probability
+```{r crude3yr}
+summary(fit1, times = 1095)
+```
+##### Crude 2-yr survival probability
+```{r crude2yr}
+summary(fit1, times = 730)
+```
+
+## 4.3 Descriptive analyses
+
+Among first-line ICI initiators after 2016-05-18
+
+- Median duration of ICI treatment
+
+- Proportion of treatment for over 2 years
+
+ - Excluded 9 patients who died before the proposed start date of first-line ICI
+    
+```{r ICI-duration}
+names.ici <- c("pembrolizumab", "avelumab", "atezolizumab", "nivolumab", "durvalumab")
+names.adc <- c("vedotin-ejfv", "sacituzumab govitecan-hziy")
+
+Names.ici <- c("Pembrolizumab", "Avelumab", "Atezolizumab", "Nivolumab", "Durvalumab")
+Names.adc <- c("Enfortumab Vedotin-Ejfv", "Sacituzumab Govitecan-Hziy")
+
+lot.ici <- subset(lineoftherapy, PatientID %in% auc$PatientID & LineNumber == 1 & StartDate > as.Date("2016-05-18"))
+lot.ici <- subset(lot.ici, apply(sapply(Names.ici, grepl, lot.ici$LineName), 1, any))
+ici.startdate <- aggregate(StartDate ~ PatientID, data = lot.ici, FUN = min)
+ici.enddate <- aggregate(EndDate ~ PatientID, data = lot.ici, FUN = max)
+ici.start.end <- merge(ici.startdate, ici.enddate)
+
+ici.start.end <- merge(ici.start.end, subset(auc, select = c(PatientID, Death, CensoringDate)), all.x = TRUE)
+
+# Number of patients that died before the proposed start date of first-line ICI
+# sum(ici.start.end$StartDate > ici.start.end$CensoringDate & ici.start.end$Death == TRUE)
+death.before.ici <- which(ici.start.end$StartDate > ici.start.end$CensoringDate & ici.start.end$Death == TRUE)
+ici.start.end <- ici.start.end[-death.before.ici, ]
+
+ici.start.end$ici.duration <- as.integer(ici.start.end$EndDate - ici.start.end$StartDate)
+
+
+summary(ici.start.end$ici.duration)
+hist(ici.start.end$ici.duration/365.25,
+     main = "Distribution of duration of ICI use",
+     xlab = "Years", breaks = 0:10,
+     xaxt = "n")
+axis(1, at = 0:10, labels = 0:10)
+
+table(ici.start.end$ici.duration >= 365.25 * 2)
+prop.test(table(!ici.start.end$ici.duration >= 365.25 * 2))
+```
+- Median duration of ICI treatment is `r median(ici.start.end$ici.duration)` days.
+
+- Proportion of treatment for over 2 years is `r round(prop.test(table(!ici.start.end$ici.duration >= 365.25 * 2))$estimate, 3)`.
+
+These could be underestimated because patients who are still alive and have an ICI end date close to their end of follow up are considered to discontinue ICI.
+
+
+<!-- - Cumulative incidence of ICI discontinuation without progression or death. -->
+
+<!--   - Death or progression within 3 months after discontinuation are competing events -->
+<!--   - Among the rest, those with less than 3 months of follow up after end of treatment are censored -->
+<!--   - The rest are treatment discontinuation events. -->
+
+<!-- ```{r discontinue2} -->
+<!-- id.discont <- ici.2yr[ici.2yr$Discont, ] -->
+
+<!-- ici.start.end$event <- 1 -->
+<!-- ici.start.end$event[ici.start.end$PatientID %in% id.discont] <- 2 -->
+
+<!-- ici.start.end <- merge(ici.start.end, subset(auc, select = c(PatientID, LastDate)), all.x = TRUE) -->
+
+<!-- for ( i in 1:nrow(ici.start.end)) { -->
+<!--   if (ici.start.end$event[i] == 1) { -->
+<!--     if (as.integer(ici.start.end$LastDate[i] - ici.start.end$EndDate[i]) < 90) { -->
+<!--       ici.start.end$event[i] <- 0 -->
+<!--     } -->
+<!--   } -->
+<!-- } -->
+
+<!-- library(cmprsk) -->
+<!-- cum.incidence <- cuminc(ftime = ici.start.end$ici.duration, -->
+<!--                         fstatus = ici.start.end$event, ) -->
+<!-- plot(cum.incidence, xaxt = "n", xlim = c(0, 365.25 * 3.5), -->
+<!--      xlab = "Months from treatment start", -->
+<!--      ylab = "Cumulative incidence of discontinuation", wh = c(1,1)) -->
+<!-- axis(1, at = 0:7 * 182.625, labels = 0:7 * 6) -->
+<!-- ``` -->
+
+## 4.4 Table of number of ICI discontinuation and progression/death in each 2 months interval
+
+##### Patients who are still receiving ICI treatment at the time of censoring are considered to have discontinued treatment.
+
+```{r discont-progress-death-table}
+progression.ici <- subset(progression, PatientID %in% ici.start.end$PatientID,
+                          select = c(PatientID, ProgressionDate))
+progression.ici <- progression.ici[complete.cases(progression.ici), ]
+death.ici <- subset(mortality, PatientID %in% ici.start.end$PatientID)
+
+ici.start.end$ProgressionDeathDate <- NA
+
+for ( i in 1:nrow(ici.start.end)) {
+  start <- ici.start.end$StartDate[i]
+  end <- ici.start.end$EndDate[i]
+  id <- ici.start.end$PatientID[i]
+  prog <- sort(progression.ici[progression.ici$PatientID == id, "ProgressionDate"],
+               decreasing = FALSE)
+  prog.date <- prog[prog > start]
+  
+  if (length(prog) > 0) {
+    prog.date <- min(prog.date)
+    # prog.int <- as.integer(prog - start) %/% 60
+  } else {
+    prog.date <- NA
+    # ici.start.end$ProgressionDate[i] <- NA
+  }
+  
+  if (ici.start.end$Death[i]) {
+    death.date <- ici.start.end$CensoringDate[i]
+    # death.int <- as.integer(ici.start.end$CensoringDate[i] - start) %/% 60
+  } else {
+    death.date <- NA
+  }
+  
+  prog.death.date <- as.Date(min(prog.date, death.date, na.rm = TRUE))
+  ici.start.end$ProgressionDeathDate[i] <- as.Date(prog.death.date)
+  ici.start.end$ProgressionDeathInterval[i] <- as.integer(prog.death.date - start) %/% 60
+
+  disc.int <- as.integer(end - start) %/% 60
+  # if (ici.start.end$CensoringDate[i] <= end + 7) {
+  #   discont <- FALSE
+  # } else {
+  #   discont <- TRUE
+  #   disc.int <- as.integer(end - start) %/% 60
+  # }
+  
+  ici.start.end$Discontinuation[i] <- disc.int
+  # ici.start.end$Flag_disc <- discont
+}
+
+ici.start.end$ProgressionDeathDate <- as.Date(ici.start.end$ProgressionDeathDate)
+
+Interval <- paste0(0:17 * 2, "-", 0:17 * 2 + 2)
+
+prog.dead.flag <- ici.start.end$ProgressionDeathInterval <= ici.start.end$Discontinuation
+n.prog.dead <- ici.start.end$ProgressionDeathInterval[prog.dead.flag]
+
+disc.flag <- ici.start.end$ProgressionDeathInterval > ici.start.end$Discontinuation | is.na(ici.start.end$ProgressionDeathInterval)
+
+n.start <- table(pmin(ici.start.end$ProgressionDeathInterval, ici.start.end$Discontinuation, na.rm = TRUE))
+
+
+disc.tab <- data.frame(Interval, No.Start = NA, No.Disc = NA, No.Prog_Dead = NA)
+n.disc <- ici.start.end$Discontinuation[disc.flag]
+
+disc.tab$No.Prog_Dead <- table(n.prog.dead)[1:18]
+disc.tab$No.Disc <- table(n.disc)[1:18]
+disc.tab$No.Start <- cumsum(n.start[length(n.start):1])[length(n.start):1][1:18]
+
+disc.tab
+```
+
+## 4.5 Discontinuation patterns of ICI
+- Proportion that discontinued treatment in the absence of associated progression or death by the next 3-month time point, among patients still on ICI treatment at 2 years.
+  - Interval 24-27 for the same analysis in 4.4
+  
+<!-- - The patients with end date of first-line ICI treatment within a week before the end of follow up are not considered to discontinue ICI. -->
+
+```{r discontinue}
+ici.start.end$ProgressionDeathDate <- NA
+
+for ( i in 1:nrow(ici.start.end)) {
+  start <- ici.start.end$StartDate[i]
+  end <- ici.start.end$EndDate[i]
+  id <- ici.start.end$PatientID[i]
+  prog <- sort(progression.ici[progression.ici$PatientID == id, "ProgressionDate"],
+               decreasing = FALSE)
+  prog.date <- prog[prog > start]
+  
+  if (length(prog) > 0) {
+    prog.date <- min(prog.date)
+    # prog.int <- as.integer(prog - start) %/% 60
+  } else {
+    prog.date <- NA
+    # ici.start.end$ProgressionDate[i] <- NA
+  }
+  
+  if (ici.start.end$Death[i]) {
+    death.date <- ici.start.end$CensoringDate[i]
+    # death.int <- as.integer(ici.start.end$CensoringDate[i] - start) %/% 60
+  } else {
+    death.date <- NA
+  }
+  
+  prog.death.date <- as.Date(min(prog.date, death.date, na.rm = TRUE))
+  ici.start.end$ProgressionDeathDate[i] <- as.Date(prog.death.date)
+  ici.start.end$ProgressionDeathInterval[i] <- as.integer(prog.death.date - start) %/% 90
+
+  disc.int <- as.integer(end - start) %/% 90
+  # if (ici.start.end$CensoringDate[i] <= end + 7) {
+  #   discont <- FALSE
+  # } else {
+  #   discont <- TRUE
+  #   disc.int <- as.integer(end - start) %/% 60
+  # }
+  
+  ici.start.end$Discontinuation[i] <- disc.int
+  # ici.start.end$Flag_disc <- discont
+}
+
+ici.start.end$ProgressionDeathDate <- as.Date(ici.start.end$ProgressionDeathDate)
+
+Interval <- paste0(0:11 * 3, "-", 0:11 * 3 + 3)
+
+prog.dead.flag <- ici.start.end$ProgressionDeathInterval <= ici.start.end$Discontinuation
+n.prog.dead <- ici.start.end$ProgressionDeathInterval[prog.dead.flag]
+
+disc.flag <- ici.start.end$ProgressionDeathInterval > ici.start.end$Discontinuation | is.na(ici.start.end$ProgressionDeathInterval)
+
+n.start <- table(pmin(ici.start.end$ProgressionDeathInterval, ici.start.end$Discontinuation, na.rm = TRUE))
+
+
+disc.tab <- data.frame(Interval, No.Start = NA, No.Disc = NA, No.Prog_Dead = NA)
+n.disc <- ici.start.end$Discontinuation[disc.flag]
+
+disc.tab$No.Prog_Dead <- table(n.prog.dead)[1:12]
+disc.tab$No.Disc <- table(n.disc)[1:12]
+disc.tab$No.Start <- cumsum(n.start[length(n.start):1])[length(n.start):1][1:12]
+
+disc.tab
+# ici.2yr <- subset(ici.start.end, ici.duration > 365.25 * 2)
+# 
+# progression.ici <- subset(progression, PatientID %in% ici.2yr$PatientID,
+#                           select = c(PatientID, ProgressionDate))
+# progression.ici <- progression.ici[complete.cases(progression.ici), ]
+# death.ici <- subset(mortality, PatientID %in% ici.2yr$PatientID)
+# 
+# ici.2yr$Discont <- TRUE
+# 
+# ici.2yr$Discont <- ifelse(ici.2yr$CensoringDate <= ici.2yr$EndDate + 7, FALSE, TRUE)
+# 
+# for ( i in 1:nrow(ici.2yr)) {
+#   end <- ici.2yr$EndDate[i]
+#   end3m <- end + 90
+#   
+#   id <- ici.2yr$PatientID[i]
+#   prog <- progression.ici[progression.ici$PatientID == id, "ProgressionDate"]
+#   mort <- death.ici[death.ici$PatientID == id, "DateOfDeath"]
+#   prog.mort.dates <- c(prog, mort)
+#   
+#   if (!is.null(prog.mort.dates)) {
+#     if (any(prog.mort.dates > end & prog.mort.dates < end3m)) {
+#       ici.2yr$Discont[i] <- FALSE
+#     }
+#   }
+# }
+# 
+# table(ici.2yr$Discont)
+# prop.test(table(!ici.2yr$Discont))
+```
+The proportion is `r round(disc.tab[9, 3]/disc.tab[9, 2], 3)`.
+
+# 5. Adjusted analysis
+## 5.1 Covariates
+
+##### Covariates measured at index date, which is the start date of first line treatment. 
+- E.g., the last record of `ecog` and `insurance` before `Line1StartDate`.
+
+```{r demographics}
+demographics <- read.csv("../Bladder/Demographics.csv")
+for (i in 1:nrow(demographics)) {
+  if (demographics$State[i] == "") {
+    demographics$Location[i] <- NA
+  } else if (demographics$State[i] %in% c('CT','MA','ME','NH','RI','VT','NY','NJ','PA')) {
+    demographics$Location[i] <- "Northeast"
+  } else if (demographics$State[i] %in% c('DC','DE','FL','GA','MD','NC','SC','VA','WV','AL','KY','MS','TN','AR','OK','LA','TX')) {
+    demographics$Location[i] <- "South"
+  } else if (demographics$State[i] %in% c('IA','KS','MN','MO','ND','NE','SD','IL','IN','MI','OH','WI')) {
+    demographics$Location[i] <- "Midwest"
+  } else if (demographics$State[i] %in% c('AZ','CO','ID','MT','NM','NV','UT','WY','AK','CA','HI','OR','WA')) {
+    demographics$Location[i] <- "West"
+  }
+
+  if (demographics$Race[i] == "") {
+    demographics$Race[i] <- NA
+  } else if (demographics$Race[i] %in% c("Hispanic or Latino", "Asian")) {
+    demographics$Race[i] <- "Other Race"
+  }
+
+  if (demographics$BirthSex[i] == "") {
+    demographics$BirthSex[i] <- NA
+  }
+
+  if (demographics$Ethnicity[i] == "") {
+    demographics$Ethnicity[i] <- NA
+  }
+}
+
+demo <- subset(demographics, select = c("PatientID", "BirthYear", "BirthSex", "Race", "Location"))
+
+auc <- merge(auc, demo, all.x = TRUE)
+```
+
+```{r}
+auc$AdvancedDiagnosisYear <- as.integer(format(auc$AdvancedDiagnosisDate,"%Y"))
+auc$DiagnosisYear <- as.integer(format(auc$DiagnosisDate,"%Y"))
+auc$Line1Year <- as.integer(format(auc$Line1StartDate,"%Y"))
+
+auc$AgeAtAdvancedDiagnosis <- auc$AdvancedDiagnosisYear - auc$BirthYear
+auc$AgeAtDiagnosis <- auc$DiagnosisYear - auc$BirthYear
+auc$AgeAtLine1 <- auc$Line1Year - auc$BirthYear
+```
+
+```{r}
+auc$StageAtDiagnosis <- NA
+for (i in 1:nrow(auc)) {
+  if (auc$GroupStage[i] %in% c("Stage 0a", "Stage 0is")) auc$StageAtDiagnosis[i] <- "Stage0"
+  if (auc$GroupStage[i] %in% c("Stage I")) auc$StageAtDiagnosis[i] <- "Stage1"
+  if (auc$GroupStage[i] %in% c("Stage II")) auc$StageAtDiagnosis[i] <- "Stage2"
+  if (auc$GroupStage[i] %in% c("Stage III", "Stage IIIA", "Stage IIIB")) auc$StageAtDiagnosis[i] <- "Stage3"
+  if (auc$GroupStage[i] %in% c("Stage IV", "Stage IVA", "Stage IVB")) auc$StageAtDiagnosis[i] <- "Stage4"
+}
+auc$StageAtDiagnosis <- factor(auc$StageAtDiagnosis)
+auc <- subset(auc, select = -GroupStage)
+```
+
+```{r}
+auc$SmokingHistory <- NA
+auc$SmokingHistory <- ifelse(auc$SmokingStatus == "History of smoking", TRUE, FALSE)
+auc <- subset(auc, select = -SmokingStatus)
+```
+
+```{r}
+practice <- read.csv("../Bladder/Practice.csv")
+
+prac <- aggregate(PracticeType~ PatientID,
+                  data = practice,
+                  FUN = function(x) {
+                    ifelse(length(unique(x)) == 2, "ACADEMIC", x)
+                  })
+
+auc <- merge(auc, prac,, by = "PatientID", all.x = TRUE)
+```
+
+
+```{r}
+ecog <- read.csv("../Bladder/ECOG.csv")
+ecog$EcogDate <- as.Date(ecog$EcogDate)
+ecog.unique <- aggregate(EcogValue ~ PatientID + EcogDate, data = ecog, FUN = max)
+
+# auc <- auc |>
+#   left_join(ecog.unique, join_by(PatientID == PatientID, closest(Line1StartDate > EcogDate)))
+# auc <- auc[, -(ncol(auc) - 1)]
+# names(auc)[ncol(auc)] <- "EcogValueAtAdvancedDiagnosis"
+# 
+# auc$EcogValueAtAdvancedDiagnosis <- ifelse(auc$EcogValueAtAdvancedDiagnosis < 2, "<2", ">= 2")
+
+# auc <- auc |>
+#   left_join(ecog.unique, join_by(PatientID == PatientID, closest(DiagnosisDate > EcogDate)))
+# auc <- auc[, -(ncol(auc) - 1)]
+# names(auc)[ncol(auc)] <- "EcogValueAtDiagnosis"
+#
+auc <- auc |>
+  left_join(ecog.unique, join_by(PatientID == PatientID, closest(Line1StartDate > EcogDate)))
+auc <- auc[, -(ncol(auc) - 1)]
+names(auc)[ncol(auc)] <- "EcogValueAtLine1"
+
+auc$EcogValueAtLine1 <- ifelse(auc$EcogValueAtLine1 < 2, "< 2", ">= 2")
+auc$EcogValueAtLine1 <- as.factor(auc$EcogValueAtLine1)
+```
+
+```{r}
+insurance <- read.csv("../Bladder/Insurance.csv")
+
+insurance$StartDate <- as.Date(insurance$StartDate)
+insurance$EndDate <- as.Date(insurance$EndDate)
+
+ins <- insurance[, c("PatientID", "PayerCategory", "StartDate")]
+ins$Insurance <- ifelse(ins$PayerCategory %in% c("Medicaid", "Medicare", "Other Government Program"),
+                        "Government",
+                        ifelse(ins$PayerCategory %in% c("Commercial Health Plan"), "Commercial", "Other"))
+ins$Insurance <- factor(ins$Insurance, levels = c("Government", "Commercial", "Other"))
+ins <- subset(ins, select = -PayerCategory)
+# multiple insurance with the same start date
+ins <- unique(ins)
+ins <- aggregate(Insurance ~ PatientID + StartDate,
+                 data = ins,
+                 FUN = function(x) {names(which.max(table(x)))})
+
+auc <- auc |>
+  left_join(select(ins, c(PatientID, StartDate, Insurance)),
+            join_by(PatientID == PatientID, closest(Line1StartDate > StartDate)))
+```
+
+```{r}
+auc$BirthSex <- as.factor(auc$BirthSex)
+auc$Race <- as.factor(auc$Race)
+auc$Location <- as.factor(auc$Location)
+auc$Insurance <- as.factor(auc$Insurance)
+auc$PracticeType <- as.factor(auc$PracticeType)
+auc$PrimarySite <- as.factor(auc$PrimarySite)
+```
+
+### Table 1
+
+```{r}
+library(table1)
+
+pvalue <- function(x, ...) {
+  # Construct vectors of data y, and groups (strata) g
+  y <- unlist(x)
+  g <- factor(rep(1:length(x), times=sapply(x, length)))
+  if (is.numeric(y)) {
+    # For numeric variables, perform a standard 2-sample t-test
+    p <- summary(aov(y ~ g))[[1]]$`Pr(>F)`[1]
+  } else {
+    # For categorical variables, perform a chi-squared test of independence
+    p <- chisq.test(table(y, g))$p.value
+  }
+  # Format the p-value, using an HTML entity for the less-than sign.
+  # The initial empty string places the output on the line below the variable label.
+  c("", sub("<", "&lt;", format.pval(p, digits=3, eps=0.001)))
+}
+
+table1(~ BirthSex + Race + StageAtDiagnosis +
+         AgeAtLine1 +
+         EcogValueAtLine1 +
+         SmokingHistory + Location + Insurance + PracticeType + PrimarySite | Line1StartPeriod,
+       # data = subset(dd, Line1StartPeriod %in% c("Before ICI", "After ADC")),
+       data = auc,
+       overall = FALSE,
+       extra.col = list(`P-value` = pvalue))
+```
+
+```{r createtableone}
+library(tableone)
+# auctab <- auc[auc$Line1StartPeriod != "After ADC", ]
+# auctab$Line1StartPeriod <- as.character(auctab$Line1StartPeriod)
+aucsvy <- survey::svydesign(ids = ~0, data = auc)
+tab1 <- CreateTableOne(vars = c("BirthSex" , "Race" , "StageAtDiagnosis" ,
+                                "AgeAtLine1" ,
+                                "EcogValueAtLine1" ,
+                                "SmokingHistory" , "Location" ,
+                                "Insurance" , "PracticeType" , "PrimarySite"),
+                       strata = "Line1StartPeriod", data = auc, smd = TRUE, test = FALSE)
+print(tab1, smd = TRUE, showAllLevels = TRUE)
+```
+
+
+
+## 5.2 Adjusted analysis
+##### Multiple imputation followed by inverse probability weighting to balance covariates
+```{r}
+library(mice)
+library(twang)
+library(MatchThem)
+library(cobalt)
+```
+
+```{r}
+covs1 <- subset(auc,
+                select = c(BirthSex, Race, StageAtDiagnosis,
+                           AgeAtLine1,
+                           EcogValueAtLine1,
+                           SmokingHistory, Location, Insurance,
+                           PracticeType, PrimarySite,
+                           Line1StartPeriod,
+                           Line1StartDate, CensoringDate, Death))
+covs1$SmokingHistory <- as.integer(covs1$SmokingHistory)
+```
+
+```{r message=FALSE}
+imp1 <- mice(covs1, m = 1, maxit = 0)
+predmat1 <- imp1$predictorMatrix
+imp1.method <- imp1$method
+# imp.method["DiagnosisDate"] <- ""
+
+# CensoringDate and Line1StartDate excluded from imputation model
+predmat1[, "Line1StartDate"] <- 0
+predmat1[, "CensoringDate"] <- 0
+
+imp1 <- mice(covs1,
+             m = 10,
+             predictorMatrix = predmat1,
+             method = imp1.method,
+             printFlag = FALSE)
+```
+
+```{r}
+library(WeightIt)
+library(MatchThem)
+ipw1 <- weightthem(Line1StartPeriod ~ BirthSex + Race +
+                     StageAtDiagnosis +
+                     AgeAtLine1 +
+                     EcogValueAtLine1 +
+                     SmokingHistory + Location +
+                     Insurance + PracticeType + PrimarySite,
+                   datasets = imp1, approach = "within",
+                   method = "gbm", verbose = TRUE, criterion = "smd.mean")
+```
+
+##### Some imbalance in stage at diagnosis and age at first line treatment start date.
+```{r fig.dim=c(10,6)}
+cobalt::love.plot(ipw1, stars = "std", thresholds = 0.1)
+# cobalt::bal.tab(ipw1)
+```
+
+```{r}
+wts1 <- cobalt::get.w(ipw1)
+wts1 <- matrix(wts1, ncol = 10)
+
+fit1.imp.ipw <- vector(mode = "list", length = 10)
+
+for (i in 1:10) {
+  fit1.imp.ipw[[i]] <- with(auc,
+                            survfit(Surv(time = as.numeric(CensoringDate - Line1StartDate),
+                                         event = Death) ~ Line1StartPeriod,
+                                    conf.type = "log-log",
+                                    se.fit = TRUE,
+                                    weights = ipw1$models[[i]]$weights))
+}
+med.before <- med.between <- med.after <- numeric(10)
+for (i in 1:10) {
+  fit.tmp <- fit1.imp.ipw[[i]]
+  meds <- median(fit.tmp)
+  med.before[i] <- meds[1]
+  med.between[i] <- meds[2]
+  med.after[i] <- meds[3]
+
+
+  # se.before <- summary(fit.tmp, times = median.before)$std.err[1]
+  # se.between <- summary(fit.tmp, times = median.between)$std.err[2]
+  # se.after <- summary(fit.tmp, times = median.after)$std.err[3]
+}
+```
+
+Median survival for three cohorts
+
+- First line start date before ICI: `r mean(med.before)`
+
+- First line start date after ICI and before ADC: `r mean(med.between)`
+
+- First line start date after ADC: `r mean(med.after)`
+
+##### Survival curve
+```{r wtsmean, fig.dim=c(8,6)}
+wts1.mean <- rowMeans(wts1)
+# auc$Line1StartPeriod <- as.character(dd$Line1StartPeriod)
+
+ggsurvplot(fit = with(auc, survfit(Surv(time = as.numeric(CensoringDate - Line1StartDate),
+                                        event = Death) ~ Line1StartPeriod,
+                                   conf.type = "log-log", se.fit = TRUE, weights = wts1.mean)),
+           data = auc,
+           # xlim = c(0, 1000),
+           break.time.by = 365.25,
+           xscale = "d_y",
+           pval = TRUE,
+           conf.int = TRUE,
+           risk.table = TRUE, # Add risk table
+           risk.table.col = "strata", # Change risk table color by groups
+           # linetype = "strata", # Change line type by groups
+           surv.median.line = "hv", # Specify median survival
+           ggtheme = theme_bw(), # Change ggplot2 theme
+           palette = c("#E7B800", "#2E9FDF", "red"),
+           risk.table.y.text = FALSE,
+           xlab = "Time in Years",
+           censor = FALSE, fontsize = 3,
+           legend.title = "Initiation Period",
+           legend.labs = c("Before ICI Approval", "After ICI and Before ADC Approval", "After ADC Approval"))
+```
+
+```{r print-fit-ipw}
+fit.ipw <- survfit(Surv(time = as.numeric(CensoringDate - Line1StartDate),
+                        event = Death) ~ Line1StartPeriod,
+                   data = auc,
+                   conf.type = "log-log",
+                   se.fit = TRUE,
+                   weights = wts1.mean)
+print(fit.ipw)
+```
+
+##### Adjusted 3-yr survival probability
+```{r summary-fit-ipw}
+summary(fit.ipw, times = 1095)
+
+ppp <- summary(fit.ipw, times = 1095)$surv
+ppp.SE <- summary(fit.ipw, times = 1095)$std.err
+
+# Weighted mean of probabilities
+weights <- 1 / ppp.SE^2
+p_bar <- sum(weights * ppp) / sum(weights)
+
+# Chi-square test statistic
+chi2 <- sum(((ppp - p_bar)^2) / ppp.SE^2)
+
+# Degrees of freedom
+df <- length(ppp) - 1
+
+# P-value
+p_value <- pchisq(chi2, df, lower.tail = FALSE)
+
+# Results
+cat("Chi-square statistic:", chi2, "\n")
+cat("Degrees of freedom:", df, "\n")
+cat("P-value:", p_value, "\n")
+
+ppp[3]/ppp[1]
+```
+
+
+## 5.3 Covariate balance
+```{r tableone-weighted}
+library(tableone)
+# auctab <- auc[auc$Line1StartPeriod != "After ADC", ]
+# auctab$Line1StartPeriod <- as.character(auctab$Line1StartPeriod)
+aucsvy <- survey::svydesign(ids = ~0, data = auc, weights = wts1.mean)
+tab1 <- svyCreateTableOne(vars = c("BirthSex" , "Race" , "StageAtDiagnosis" ,
+                                   "AgeAtLine1" ,
+                                   "EcogValueAtLine1" ,
+                                   "SmokingHistory" , "Location" ,
+                                   "Insurance" , "PracticeType" , "PrimarySite"),
+                          strata = "Line1StartPeriod", data = aucsvy, smd = TRUE, test = FALSE)
+print(tab1, smd = TRUE, showAllLevels = TRUE)
+```
+
+
+# 6 Subgroup Analyses
+
+##### To be consistent with the primary analysis, I think we can primarily report the 3-yr survival.
+
+## 6.1 Age groups
+- < 65
+- 65 - 74
+- 75+
+```{r subgroup-age}
+auc$AgeCat <- cut(auc$AgeAtLine1, breaks = c(0, 65, 75, Inf))
+fit.ipw.age <- survfit(Surv(time = as.numeric(CensoringDate - Line1StartDate),
+                        event = Death) ~ AgeCat + Line1StartPeriod,
+                   data = auc,
+                   conf.type = "log-log",
+                   se.fit = TRUE,
+                   weights = wts1.mean)
+print(fit.ipw.age)
+```
+
+```{r age-3yr}
+summary(fit.ipw.age,  times = 365.25 * 3)
+```
+
+
+| Subgroup | Before ICI | Between ICI & ADC | After ADC |
+|----------|-------------------------|-------------------------|-------------------------|
+| < 65     | 0.238 (0.203, 0.274)     | 0.276 (0.240, 0.313)            | 0.317 (0.272, 0.362)    |
+| 65-74    | 0.222 (0.194, 0.252)     | 0.271 (0.242, 0.301)            | 0.321 (0.288, 0.355)    |
+| 75+      | 0.131 (0.117, 0.168)     | 0.178 (0.156, 0.201)            | 0.200 (0.175, 0.227)    |
+
+- 3-yr survival probability improved for all three cohorts over time.
+
+- The two younger cohorts have similar survival, much better than the 75+ group.
+
+## 6.2 Birth Sex group
+```{r subgroup-bsex}
+fit.ipw.bsex <- survfit(Surv(time = as.numeric(CensoringDate - Line1StartDate),
+                        event = Death) ~  BirthSex + Line1StartPeriod,
+                   data = auc,
+                   conf.type = "log-log",
+                   se.fit = TRUE,
+                   weights = wts1.mean)
+print(fit.ipw.bsex)
+```
+
+```{r bsex-3yr}
+summary(fit.ipw.bsex,  times = 365.25 * 3)
+```
+
+
+| Subgroup | Before ICI | Between ICI & ADC | After ADC |
+|--------------|-------------------------|-------------------------|-------------------------|
+| Female birth sex    | 0.213 (0.178, 0.249)     | 0.235 (0.203, 0.268)            | 0.279 (0.244, 0.314)    |
+| Male birth sex   | 0.185 (0.166, 0.204)     | 0.233 (0.214, 0.252)            | 0.266 (0.243, 0.289)    |
+
+- Females have had better survival than males
+
+- Males have gained significantly better survival over time. 
+
+
+## 6.3 Race group
+```{r subgroup-white}
+auc$white <- ifelse(auc$Race == "White", "White", "Non-White")
+fit.ipw.white <- survfit(Surv(time = as.numeric(CensoringDate - Line1StartDate),
+                        event = Death) ~ white + Line1StartPeriod,
+                   data = auc,
+                   conf.type = "log-log",
+                   se.fit = TRUE,
+                   weights = wts1.mean)
+print(fit.ipw.white)
+```
+
+```{r white-3yr}
+summary(fit.ipw.white,  times = 365.25 * 3)
+```
+
+| Subgroup | Before ICI | Between ICI & ADC | After ADC |
+|------------|-------------------------|-------------------------|-------------------------|
+| Non-white    | 0.220 (0.177, 0.267)     | 0.213 (0.178, 0.250)            | 0.252 (0.209, 0.296)    |
+| White   | 0.189 (0.171, 0.208)     | 0.241 (0.222, 0.261)            | 0.278 (0.255, 0.302)    |
+
+- Both groups have seen improved survival after ADC.
+
+## 6.4 ECOG performance status group
+```{r subgroup-ecog}
+fit.ipw.ecog <- survfit(Surv(time = as.numeric(CensoringDate - Line1StartDate),
+                        event = Death) ~ EcogValueAtLine1 + Line1StartPeriod,
+                   data = auc,
+                   conf.type = "log-log",
+                   se.fit = TRUE,
+                   weights = wts1.mean)
+print(fit.ipw.ecog)
+```
+
+```{r ecog-3yr}
+summary(fit.ipw.ecog,  times = 365.25 * 3)
+```
+
+| Subgroup | Before ICI | Between ICI & ADC | After ADC |
+|-------------|-------------------------|-------------------------|-------------------------|
+| ECOG PS <2    | 0.203 (0.177, 0.231)     | 0.253 (0.230, 0.276)            | 0.296 (0.271, 0.321)    |
+| ECOG PS >= 2   | 0.052 (0.027, 0.088)     | 0.100 (0.073, 0.133)            | 0.114 (0.080, 0.155)    |  
+  
+- Survival in >=2 group more than doubled but still low.
+
+- Survival in <2 group improved after ICI and ADC.
