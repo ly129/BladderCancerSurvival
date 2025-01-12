@@ -1,10 +1,11 @@
 ---
-title: "Line1_Treated_NoCensor_ThreeCohorts"
+title: "Bladder Cancer Survival"
 author: "Yi Lian"
-date: "2024-11-26"
+date: "2025-01-02"
 output:
   html_document: default
   word_document: default
+  pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -68,7 +69,7 @@ progression$ProgressionDate <- as.Date(progression$ProgressionDate)
 
 Begin with `r nrow(eauc)` patients.
 
-## 2.1 First line treatment start date bewteen 01/01/2011 and 03/01/2023
+## 2.1 First line treatment start date bewteen 01/01/2011 and 09/30/2023
 - Implicitly excludes untreated patients
 ```{r mergeline1date}
 line1 <- subset(lineoftherapy, LineNumber == 1, select = c(PatientID, StartDate))
@@ -80,7 +81,7 @@ auc <- merge(auc, line1, all.x = TRUE, by = "PatientID")
 
 ```{r line1date}
 auc <- subset(auc, subset = Line1StartDate >= as.Date("2011-01-01") & 
-                Line1StartDate <= as.Date("2023-03-01"))
+                Line1StartDate <= as.Date("2023-09-30"))
 ```
 Down to `r nrow(auc)` patients.
 
@@ -108,11 +109,11 @@ End of follow-up is the last interaction with a healthcare provider
 
 -   Censoring: the latest of
 
-    -   The last visit date in `Visit.csv`
-    -   The start date of the last oral drug in `Enhanced_AdvUrothelial_Orals.csv`
-    -   The episode date of the last drug episode in `DrugEpisode.csv`.
-    -   The `Line1StartDate`
-    -   The `LastClinicNoteDate` in `Enhanced_AdvUrothelial_Progression.csv`.
+-   The last visit date in `Visit.csv`
+-   The start date of the last oral drug in `Enhanced_AdvUrothelial_Orals.csv`
+-   The episode date of the last drug episode in `DrugEpisode.csv`.
+-   The `Line1StartDate`
+-   The `LastClinicNoteDate` in `Enhanced_AdvUrothelial_Progression.csv`.
 
 ```{r death}
 auc <- merge(auc, mortality, by = "PatientID", all.x = TRUE)
@@ -149,15 +150,15 @@ auc$CensoringDate <- as.Date(ifelse(is.na(auc$DateOfDeath), auc$LastDate, auc$Da
 - ADC first approval on 12/18/2019
 ```{r diagnosis_period}
 auc$Line1StartPeriod <- ifelse(auc$Line1StartDate < as.Date("2016-05-18"),
-                              "Before ICI", ifelse(auc$Line1StartDate > as.Date("2019-12-18"),
-                                                   "After ADC",
-                                                   "Between ICI & ADC"))
+                               "Before ICI", ifelse(auc$Line1StartDate > as.Date("2019-12-18"),
+                                                    "After ADC",
+                                                    "Between ICI & ADC"))
 
 auc$Line1StartPeriod <- factor(auc$Line1StartPeriod, levels = c("Before ICI", "Between ICI & ADC", "After ADC"))
 ```
 
 ## 4.2 Analysis
-```{r crudeanalysis, warning=FALSE}
+```{r crudeanalysis, fig.dim=c(8,6), warning=FALSE}
 auc.surv <- with(auc,
                  Surv(time = as.integer(CensoringDate - Line1StartDate),
                       event = Death))
@@ -178,7 +179,7 @@ ggsurvplot(fit = fit1,
            palette = c("#E7B800", "#2E9FDF", "red"),
            risk.table.y.text = FALSE,
            xlab = "Time in Years",
-           censor = FALSE, fontsize = 2)
+           censor = FALSE, fontsize = 3)
 ```
 
 ##### Crude median survival
@@ -204,8 +205,8 @@ Among first-line ICI initiators after 2016-05-18
 
 - Proportion of treatment for over 2 years
 
- - Excluded 9 patients who died before the proposed start date of first-line ICI
-    
+- Excluded 9 patients who died before the proposed start date of first-line ICI
+
 ```{r ICI-duration}
 names.ici <- c("pembrolizumab", "avelumab", "atezolizumab", "nivolumab", "durvalumab")
 names.adc <- c("vedotin-ejfv", "sacituzumab govitecan-hziy")
@@ -315,7 +316,7 @@ for ( i in 1:nrow(ici.start.end)) {
   prog.death.date <- as.Date(min(prog.date, death.date, na.rm = TRUE))
   ici.start.end$ProgressionDeathDate[i] <- as.Date(prog.death.date)
   ici.start.end$ProgressionDeathInterval[i] <- as.integer(prog.death.date - start) %/% 60
-
+  
   disc.int <- as.integer(end - start) %/% 60
   # if (ici.start.end$CensoringDate[i] <= end + 7) {
   #   discont <- FALSE
@@ -352,8 +353,8 @@ disc.tab
 
 ## 4.5 Discontinuation patterns of ICI
 - Proportion that discontinued treatment in the absence of associated progression or death by the next 3-month time point, among patients still on ICI treatment at 2 years.
-  - Interval 24-27 for the same analysis in 4.4
-  
+- Interval 24-27 for the same analysis in 4.4
+
 <!-- - The patients with end date of first-line ICI treatment within a week before the end of follow up are not considered to discontinue ICI. -->
 
 ```{r discontinue}
@@ -385,7 +386,7 @@ for ( i in 1:nrow(ici.start.end)) {
   prog.death.date <- as.Date(min(prog.date, death.date, na.rm = TRUE))
   ici.start.end$ProgressionDeathDate[i] <- as.Date(prog.death.date)
   ici.start.end$ProgressionDeathInterval[i] <- as.integer(prog.death.date - start) %/% 90
-
+  
   disc.int <- as.integer(end - start) %/% 90
   # if (ici.start.end$CensoringDate[i] <= end + 7) {
   #   discont <- FALSE
@@ -470,17 +471,17 @@ for (i in 1:nrow(demographics)) {
   } else if (demographics$State[i] %in% c('AZ','CO','ID','MT','NM','NV','UT','WY','AK','CA','HI','OR','WA')) {
     demographics$Location[i] <- "West"
   }
-
+  
   if (demographics$Race[i] == "") {
     demographics$Race[i] <- NA
   } else if (demographics$Race[i] %in% c("Hispanic or Latino", "Asian")) {
     demographics$Race[i] <- "Other Race"
   }
-
+  
   if (demographics$BirthSex[i] == "") {
     demographics$BirthSex[i] <- NA
   }
-
+  
   if (demographics$Ethnicity[i] == "") {
     demographics$Ethnicity[i] <- NA
   }
@@ -594,32 +595,32 @@ auc$PrimarySite <- as.factor(auc$PrimarySite)
 ### Table 1
 
 ```{r}
-library(table1)
-
-pvalue <- function(x, ...) {
-  # Construct vectors of data y, and groups (strata) g
-  y <- unlist(x)
-  g <- factor(rep(1:length(x), times=sapply(x, length)))
-  if (is.numeric(y)) {
-    # For numeric variables, perform a standard 2-sample t-test
-    p <- summary(aov(y ~ g))[[1]]$`Pr(>F)`[1]
-  } else {
-    # For categorical variables, perform a chi-squared test of independence
-    p <- chisq.test(table(y, g))$p.value
-  }
-  # Format the p-value, using an HTML entity for the less-than sign.
-  # The initial empty string places the output on the line below the variable label.
-  c("", sub("<", "&lt;", format.pval(p, digits=3, eps=0.001)))
-}
-
-table1(~ BirthSex + Race + StageAtDiagnosis +
-         AgeAtLine1 +
-         EcogValueAtLine1 +
-         SmokingHistory + Location + Insurance + PracticeType + PrimarySite | Line1StartPeriod,
-       # data = subset(dd, Line1StartPeriod %in% c("Before ICI", "After ADC")),
-       data = auc,
-       overall = FALSE,
-       extra.col = list(`P-value` = pvalue))
+# library(table1)
+# 
+# pvalue <- function(x, ...) {
+#   # Construct vectors of data y, and groups (strata) g
+#   y <- unlist(x)
+#   g <- factor(rep(1:length(x), times=sapply(x, length)))
+#   if (is.numeric(y)) {
+#     # For numeric variables, perform a standard 2-sample t-test
+#     p <- summary(aov(y ~ g))[[1]]$`Pr(>F)`[1]
+#   } else {
+#     # For categorical variables, perform a chi-squared test of independence
+#     p <- chisq.test(table(y, g))$p.value
+#   }
+#   # Format the p-value, using an HTML entity for the less-than sign.
+#   # The initial empty string places the output on the line below the variable label.
+#   c("", sub("<", "&lt;", format.pval(p, digits=3, eps=0.001)))
+# }
+# 
+# table1(~ BirthSex + Race + StageAtDiagnosis +
+#          AgeAtLine1 +
+#          EcogValueAtLine1 +
+#          SmokingHistory + Location + Insurance + PracticeType + PrimarySite | Line1StartPeriod,
+#        # data = subset(dd, Line1StartPeriod %in% c("Before ICI", "After ADC")),
+#        data = auc,
+#        overall = FALSE,
+#        extra.col = list(`P-value` = pvalue))
 ```
 
 ```{r createtableone}
@@ -627,13 +628,16 @@ library(tableone)
 # auctab <- auc[auc$Line1StartPeriod != "After ADC", ]
 # auctab$Line1StartPeriod <- as.character(auctab$Line1StartPeriod)
 aucsvy <- survey::svydesign(ids = ~0, data = auc)
-tab1 <- CreateTableOne(vars = c("BirthSex" , "Race" , "StageAtDiagnosis" ,
-                                "AgeAtLine1" ,
+tab1 <- CreateTableOne(vars = c("AgeAtLine1" ,
+                                "BirthSex" ,
+                                "Race" ,
+                                "StageAtDiagnosis" ,
                                 "EcogValueAtLine1" ,
                                 "SmokingHistory" , "Location" ,
                                 "Insurance" , "PracticeType" , "PrimarySite"),
                        strata = "Line1StartPeriod", data = auc, smd = TRUE, test = FALSE)
 print(tab1, smd = TRUE, showAllLevels = TRUE)
+write.csv(print(tab1, smd = TRUE, showAllLevels = TRUE), file = "crudetable1.csv")
 ```
 
 
@@ -659,7 +663,7 @@ covs1 <- subset(auc,
 covs1$SmokingHistory <- as.integer(covs1$SmokingHistory)
 ```
 
-```{r message=FALSE}
+```{r imputation, message=FALSE}
 imp1 <- mice(covs1, m = 1, maxit = 0)
 predmat1 <- imp1$predictorMatrix
 imp1.method <- imp1$method
@@ -676,7 +680,7 @@ imp1 <- mice(covs1,
              printFlag = FALSE)
 ```
 
-```{r}
+```{r iptw}
 library(WeightIt)
 library(MatchThem)
 ipw1 <- weightthem(Line1StartPeriod ~ BirthSex + Race +
@@ -716,47 +720,63 @@ for (i in 1:10) {
   med.before[i] <- meds[1]
   med.between[i] <- meds[2]
   med.after[i] <- meds[3]
-
-
+  
+  
   # se.before <- summary(fit.tmp, times = median.before)$std.err[1]
   # se.between <- summary(fit.tmp, times = median.between)$std.err[2]
   # se.after <- summary(fit.tmp, times = median.after)$std.err[3]
 }
 ```
 
-Median survival for three cohorts
+<!-- Median survival for three cohorts -->
 
-- First line start date before ICI: `r mean(med.before)`
+<!-- - First line start date before ICI: `r mean(med.before)` -->
 
-- First line start date after ICI and before ADC: `r mean(med.between)`
+<!-- - First line start date after ICI and before ADC: `r mean(med.between)` -->
 
-- First line start date after ADC: `r mean(med.after)`
+<!-- - First line start date after ADC: `r mean(med.after)` -->
 
 ##### Survival curve
-```{r wtsmean, fig.dim=c(8,6)}
+```{r wtsmean, fig.dim=c(7,6)}
 wts1.mean <- rowMeans(wts1)
 # auc$Line1StartPeriod <- as.character(dd$Line1StartPeriod)
 
-ggsurvplot(fit = with(auc, survfit(Surv(time = as.numeric(CensoringDate - Line1StartDate),
-                                        event = Death) ~ Line1StartPeriod,
-                                   conf.type = "log-log", se.fit = TRUE, weights = wts1.mean)),
-           data = auc,
-           # xlim = c(0, 1000),
-           break.time.by = 365.25,
-           xscale = "d_y",
-           pval = TRUE,
-           conf.int = TRUE,
-           risk.table = TRUE, # Add risk table
-           risk.table.col = "strata", # Change risk table color by groups
-           # linetype = "strata", # Change line type by groups
-           surv.median.line = "hv", # Specify median survival
-           ggtheme = theme_bw(), # Change ggplot2 theme
-           palette = c("#E7B800", "#2E9FDF", "red"),
-           risk.table.y.text = FALSE,
-           xlab = "Time in Years",
-           censor = FALSE, fontsize = 3,
-           legend.title = "Initiation Period",
-           legend.labs = c("Before ICI Approval", "After ICI and Before ADC Approval", "After ADC Approval"))
+pdf(file = "survival_plot.pdf", width = 7, height = 6)
+plt <- ggsurvplot(fit = with(auc, survfit(Surv(time = as.numeric(CensoringDate - Line1StartDate),
+                                               event = Death) ~ Line1StartPeriod,
+                                          conf.type = "log-log", se.fit = TRUE, weights = wts1.mean)),
+                  data = auc,
+                  # xlim = c(0, 365.25 * 6),
+                  break.time.by = 365.25,
+                  xscale = "d_y",
+                  pval = TRUE,
+                  conf.int = TRUE,
+                  risk.table = TRUE, # Add risk table
+                  risk.table.col = "strata", # Change risk table color by groups
+                  # linetype = "strata", # Change line type by groups
+                  surv.median.line = "hv", # Specify median survival
+                  ggtheme = theme_bw(), # Change ggplot2 theme
+                  palette = c("#E7B800", "#2E9FDF", "red"),
+                  risk.table.y.text = FALSE,
+                  xlab = "Time in Years",
+                  censor = FALSE, fontsize = 3,
+                  legend.title = "Initiation Period",
+                  legend.labs = c("Before ICI Approval\n(2011-2016)", "After ICI and Before ADC Approval\n(2017-2019)", "After ADC Approval\n(2020-2023)"))
+plt$plot <- plt$plot + 
+  geom_text(x = 5.2 * 365,
+            y = 0.78,
+            label = "3-Year Survival Probabilities", hjust = "left") + 
+  geom_text(x = 5.5 * 365,
+            y = 0.72,
+            label = "Before ICI: 19.2% (17.5%, 20.9%)", colour = "#E7B800", hjust = "left") + 
+  geom_text(x = 5.5 * 365,
+            y = 0.66,
+            label = "After ICI and Before ADC: 23.3% (21.6%, 24.9%)", colour = "#2E9FDF", hjust = "left") + 
+  geom_text(x = 5.5 * 365,
+            y = 0.60,
+            label = "After ADC: 27.6% (25.7%, 29.5%)", colour = "red", hjust = "left")
+plt
+dev.off()
 ```
 
 ```{r print-fit-ipw}
@@ -804,13 +824,14 @@ library(tableone)
 # auctab <- auc[auc$Line1StartPeriod != "After ADC", ]
 # auctab$Line1StartPeriod <- as.character(auctab$Line1StartPeriod)
 aucsvy <- survey::svydesign(ids = ~0, data = auc, weights = wts1.mean)
-tab1 <- svyCreateTableOne(vars = c("BirthSex" , "Race" , "StageAtDiagnosis" ,
-                                   "AgeAtLine1" ,
+tab1 <- svyCreateTableOne(vars = c("AgeAtLine1" ,
+                                   "BirthSex" , "Race" , "StageAtDiagnosis" ,
                                    "EcogValueAtLine1" ,
                                    "SmokingHistory" , "Location" ,
                                    "Insurance" , "PracticeType" , "PrimarySite"),
                           strata = "Line1StartPeriod", data = aucsvy, smd = TRUE, test = FALSE)
 print(tab1, smd = TRUE, showAllLevels = TRUE)
+write.csv(print(tab1, smd = TRUE, showAllLevels = TRUE), file = "adjustedtable1.csv")
 ```
 
 
@@ -825,12 +846,33 @@ print(tab1, smd = TRUE, showAllLevels = TRUE)
 ```{r subgroup-age}
 auc$AgeCat <- cut(auc$AgeAtLine1, breaks = c(0, 65, 75, Inf))
 fit.ipw.age <- survfit(Surv(time = as.numeric(CensoringDate - Line1StartDate),
-                        event = Death) ~ AgeCat + Line1StartPeriod,
-                   data = auc,
-                   conf.type = "log-log",
-                   se.fit = TRUE,
-                   weights = wts1.mean)
+                            event = Death) ~ AgeCat + Line1StartPeriod,
+                       data = auc,
+                       conf.type = "log-log",
+                       se.fit = TRUE,
+                       weights = wts1.mean)
 print(fit.ipw.age)
+```
+
+```{r}
+ggsurvplot(fit = fit.ipw.age,
+           data = auc,
+           xlim = c(0, 365.25 * 5),
+           break.time.by = 365.25,
+           xscale = "d_y",
+           pval = TRUE,
+           conf.int = TRUE,
+           risk.table = TRUE, # Add risk table
+           risk.table.col = "strata", # Change risk table color by groups
+           # linetype = "strata", # Change line type by groups
+           surv.median.line = "hv", # Specify median survival
+           ggtheme = theme_bw(), # Change ggplot2 theme
+           # palette = c("#E7B800", "#2E9FDF", "red"),
+           risk.table.y.text = FALSE,
+           xlab = "Time in Years",
+           censor = FALSE, fontsize = 3,
+           legend.title = "Initiation Period",
+           legend.labs = c("Before ICI Approval", "After ICI and Before ADC Approval", "After ADC Approval", "Before ICI Approval2", "After ICI and Before ADC Approval2", "After ADC Approval2", "Before ICI Approval3", "After ICI and Before ADC Approval3", "After ADC Approval3"))
 ```
 
 ```{r age-3yr}
@@ -851,12 +893,33 @@ summary(fit.ipw.age,  times = 365.25 * 3)
 ## 6.2 Birth Sex group
 ```{r subgroup-bsex}
 fit.ipw.bsex <- survfit(Surv(time = as.numeric(CensoringDate - Line1StartDate),
-                        event = Death) ~  BirthSex + Line1StartPeriod,
-                   data = auc,
-                   conf.type = "log-log",
-                   se.fit = TRUE,
-                   weights = wts1.mean)
+                             event = Death) ~  BirthSex + Line1StartPeriod,
+                        data = auc,
+                        conf.type = "log-log",
+                        se.fit = TRUE,
+                        weights = wts1.mean)
 print(fit.ipw.bsex)
+```
+
+```{r}
+ggsurvplot(fit = fit.ipw.bsex,
+           data = auc,
+           xlim = c(0, 365.25 * 5),
+           break.time.by = 365.25,
+           xscale = "d_y",
+           pval = TRUE,
+           conf.int = TRUE,
+           risk.table = TRUE, # Add risk table
+           risk.table.col = "strata", # Change risk table color by groups
+           # linetype = "strata", # Change line type by groups
+           surv.median.line = "hv", # Specify median survival
+           ggtheme = theme_bw(), # Change ggplot2 theme
+           # palette = c("#E7B800", "#2E9FDF", "red"),
+           risk.table.y.text = FALSE,
+           xlab = "Time in Years",
+           censor = FALSE, fontsize = 3,
+           legend.title = "Initiation Period",
+           legend.labs = c("Before ICI Approval", "After ICI and Before ADC Approval", "After ADC Approval", "Before ICI Approval2", "After ICI and Before ADC Approval2", "After ADC Approval2"))
 ```
 
 ```{r bsex-3yr}
@@ -878,12 +941,33 @@ summary(fit.ipw.bsex,  times = 365.25 * 3)
 ```{r subgroup-white}
 auc$white <- ifelse(auc$Race == "White", "White", "Non-White")
 fit.ipw.white <- survfit(Surv(time = as.numeric(CensoringDate - Line1StartDate),
-                        event = Death) ~ white + Line1StartPeriod,
-                   data = auc,
-                   conf.type = "log-log",
-                   se.fit = TRUE,
-                   weights = wts1.mean)
+                              event = Death) ~ white + Line1StartPeriod,
+                         data = auc,
+                         conf.type = "log-log",
+                         se.fit = TRUE,
+                         weights = wts1.mean)
 print(fit.ipw.white)
+```
+
+```{r}
+ggsurvplot(fit = fit.ipw.white,
+           data = auc,
+           xlim = c(0, 365.25 * 5),
+           break.time.by = 365.25,
+           xscale = "d_y",
+           pval = TRUE,
+           conf.int = TRUE,
+           risk.table = TRUE, # Add risk table
+           risk.table.col = "strata", # Change risk table color by groups
+           # linetype = "strata", # Change line type by groups
+           surv.median.line = "hv", # Specify median survival
+           ggtheme = theme_bw(), # Change ggplot2 theme
+           # palette = c("#E7B800", "#2E9FDF", "red"),
+           risk.table.y.text = FALSE,
+           xlab = "Time in Years",
+           censor = FALSE, fontsize = 3,
+           legend.title = "Initiation Period",
+           legend.labs = c("Before ICI Approval", "After ICI and Before ADC Approval", "After ADC Approval", "Before ICI Approval2", "After ICI and Before ADC Approval2", "After ADC Approval2"))
 ```
 
 ```{r white-3yr}
@@ -900,13 +984,35 @@ summary(fit.ipw.white,  times = 365.25 * 3)
 ## 6.4 ECOG performance status group
 ```{r subgroup-ecog}
 fit.ipw.ecog <- survfit(Surv(time = as.numeric(CensoringDate - Line1StartDate),
-                        event = Death) ~ EcogValueAtLine1 + Line1StartPeriod,
-                   data = auc,
-                   conf.type = "log-log",
-                   se.fit = TRUE,
-                   weights = wts1.mean)
+                             event = Death) ~ EcogValueAtLine1 + Line1StartPeriod,
+                        data = auc,
+                        conf.type = "log-log",
+                        se.fit = TRUE,
+                        weights = wts1.mean)
 print(fit.ipw.ecog)
 ```
+
+```{r}
+ggsurvplot(fit = fit.ipw.ecog,
+           data = auc,
+           xlim = c(0, 365.25 * 5),
+           break.time.by = 365.25,
+           xscale = "d_y",
+           pval = TRUE,
+           conf.int = TRUE,
+           risk.table = TRUE, # Add risk table
+           risk.table.col = "strata", # Change risk table color by groups
+           # linetype = "strata", # Change line type by groups
+           surv.median.line = "hv", # Specify median survival
+           ggtheme = theme_bw(), # Change ggplot2 theme
+           # palette = c("#E7B800", "#2E9FDF", "red"),
+           risk.table.y.text = FALSE,
+           xlab = "Time in Years",
+           censor = FALSE, fontsize = 3,
+           legend.title = "Initiation Period",
+           legend.labs = c("Before ICI Approval", "After ICI and Before ADC Approval", "After ADC Approval", "Before ICI Approval2", "After ICI and Before ADC Approval2", "After ADC Approval2"))
+```
+
 
 ```{r ecog-3yr}
 summary(fit.ipw.ecog,  times = 365.25 * 3)
@@ -916,7 +1022,7 @@ summary(fit.ipw.ecog,  times = 365.25 * 3)
 |-------------|-------------------------|-------------------------|-------------------------|
 | ECOG PS <2    | 0.203 (0.177, 0.231)     | 0.253 (0.230, 0.276)            | 0.296 (0.271, 0.321)    |
 | ECOG PS >= 2   | 0.052 (0.027, 0.088)     | 0.100 (0.073, 0.133)            | 0.114 (0.080, 0.155)    |  
-  
+
 - Survival in >=2 group more than doubled but still low.
 
 - Survival in <2 group improved after ICI and ADC.

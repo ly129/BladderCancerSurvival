@@ -1,2 +1,6 @@
 *.Rdata
+*_files
+*cache
 *old/
+*.csv
+*.pdf
