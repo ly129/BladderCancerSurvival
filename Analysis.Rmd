@@ -637,7 +637,7 @@ tab1 <- CreateTableOne(vars = c("AgeAtLine1" ,
                                 "Insurance" , "PracticeType" , "PrimarySite"),
                        strata = "Line1StartPeriod", data = auc, smd = TRUE, test = FALSE)
 print(tab1, smd = TRUE, showAllLevels = TRUE)
-write.csv(print(tab1, smd = TRUE, showAllLevels = TRUE), file = "crudetable1.csv")
+# write.csv(print(tab1, smd = TRUE, showAllLevels = TRUE), file = "crudetable1.csv")
 ```
 
 
@@ -703,45 +703,38 @@ cobalt::love.plot(ipw1, stars = "std", thresholds = 0.1)
 wts1 <- cobalt::get.w(ipw1)
 wts1 <- matrix(wts1, ncol = 10)
 
-fit1.imp.ipw <- vector(mode = "list", length = 10)
-
-for (i in 1:10) {
-  fit1.imp.ipw[[i]] <- with(auc,
-                            survfit(Surv(time = as.numeric(CensoringDate - Line1StartDate),
-                                         event = Death) ~ Line1StartPeriod,
-                                    conf.type = "log-log",
-                                    se.fit = TRUE,
-                                    weights = ipw1$models[[i]]$weights))
-}
-med.before <- med.between <- med.after <- numeric(10)
-for (i in 1:10) {
-  fit.tmp <- fit1.imp.ipw[[i]]
-  meds <- median(fit.tmp)
-  med.before[i] <- meds[1]
-  med.between[i] <- meds[2]
-  med.after[i] <- meds[3]
-  
-  
-  # se.before <- summary(fit.tmp, times = median.before)$std.err[1]
-  # se.between <- summary(fit.tmp, times = median.between)$std.err[2]
-  # se.after <- summary(fit.tmp, times = median.after)$std.err[3]
-}
+# fit1.imp.ipw <- vector(mode = "list", length = 10)
+# 
+# for (i in 1:10) {
+#   fit1.imp.ipw[[i]] <- with(auc,
+#                             survfit(Surv(time = as.numeric(CensoringDate - Line1StartDate),
+#                                          event = Death) ~ Line1StartPeriod,
+#                                     conf.type = "log-log",
+#                                     se.fit = TRUE,
+#                                     weights = ipw1$models[[i]]$weights))
+# }
+# med.before <- med.between <- med.after <- numeric(10)
+# for (i in 1:10) {
+#   fit.tmp <- fit1.imp.ipw[[i]]
+#   meds <- median(fit.tmp)
+#   med.before[i] <- meds[1]
+#   med.between[i] <- meds[2]
+#   med.after[i] <- meds[3]
+#   
+#   
+#   # se.before <- summary(fit.tmp, times = median.before)$std.err[1]
+#   # se.between <- summary(fit.tmp, times = median.between)$std.err[2]
+#   # se.after <- summary(fit.tmp, times = median.after)$std.err[3]
+# }
 ```
 
-<!-- Median survival for three cohorts -->
-
-<!-- - First line start date before ICI: `r mean(med.before)` -->
-
-<!-- - First line start date after ICI and before ADC: `r mean(med.between)` -->
-
-<!-- - First line start date after ADC: `r mean(med.after)` -->
 
 ##### Survival curve
 ```{r wtsmean, fig.dim=c(7,6)}
 wts1.mean <- rowMeans(wts1)
 # auc$Line1StartPeriod <- as.character(dd$Line1StartPeriod)
 
-pdf(file = "survival_plot.pdf", width = 7, height = 6)
+# pdf(file = "survival_plot.pdf", width = 7, height = 6)
 plt <- ggsurvplot(fit = with(auc, survfit(Surv(time = as.numeric(CensoringDate - Line1StartDate),
                                                event = Death) ~ Line1StartPeriod,
                                           conf.type = "log-log", se.fit = TRUE, weights = wts1.mean)),
@@ -776,7 +769,7 @@ plt$plot <- plt$plot +
             y = 0.60,
             label = "After ADC: 27.6% (25.7%, 29.5%)", colour = "red", hjust = "left")
 plt
-dev.off()
+# dev.off()
 ```
 
 ```{r print-fit-ipw}
@@ -831,198 +824,198 @@ tab1 <- svyCreateTableOne(vars = c("AgeAtLine1" ,
                                    "Insurance" , "PracticeType" , "PrimarySite"),
                           strata = "Line1StartPeriod", data = aucsvy, smd = TRUE, test = FALSE)
 print(tab1, smd = TRUE, showAllLevels = TRUE)
-write.csv(print(tab1, smd = TRUE, showAllLevels = TRUE), file = "adjustedtable1.csv")
+# write.csv(print(tab1, smd = TRUE, showAllLevels = TRUE), file = "adjustedtable1.csv")
 ```
 
 
-# 6 Subgroup Analyses
+<!-- # 6 Subgroup Analyses -->
 
-##### To be consistent with the primary analysis, I think we can primarily report the 3-yr survival.
+<!-- ##### To be consistent with the primary analysis, I think we can primarily report the 3-yr survival. -->
 
-## 6.1 Age groups
-- < 65
-- 65 - 74
-- 75+
-```{r subgroup-age}
-auc$AgeCat <- cut(auc$AgeAtLine1, breaks = c(0, 65, 75, Inf))
-fit.ipw.age <- survfit(Surv(time = as.numeric(CensoringDate - Line1StartDate),
-                            event = Death) ~ AgeCat + Line1StartPeriod,
-                       data = auc,
-                       conf.type = "log-log",
-                       se.fit = TRUE,
-                       weights = wts1.mean)
-print(fit.ipw.age)
-```
+<!-- ## 6.1 Age groups -->
+<!-- - < 65 -->
+<!-- - 65 - 74 -->
+<!-- - 75+ -->
+<!-- ```{r subgroup-age} -->
+<!-- auc$AgeCat <- cut(auc$AgeAtLine1, breaks = c(0, 65, 75, Inf)) -->
+<!-- fit.ipw.age <- survfit(Surv(time = as.numeric(CensoringDate - Line1StartDate), -->
+<!--                             event = Death) ~ AgeCat + Line1StartPeriod, -->
+<!--                        data = auc, -->
+<!--                        conf.type = "log-log", -->
+<!--                        se.fit = TRUE, -->
+<!--                        weights = wts1.mean) -->
+<!-- print(fit.ipw.age) -->
+<!-- ``` -->
 
-```{r}
-ggsurvplot(fit = fit.ipw.age,
-           data = auc,
-           xlim = c(0, 365.25 * 5),
-           break.time.by = 365.25,
-           xscale = "d_y",
-           pval = TRUE,
-           conf.int = TRUE,
-           risk.table = TRUE, # Add risk table
-           risk.table.col = "strata", # Change risk table color by groups
-           # linetype = "strata", # Change line type by groups
-           surv.median.line = "hv", # Specify median survival
-           ggtheme = theme_bw(), # Change ggplot2 theme
-           # palette = c("#E7B800", "#2E9FDF", "red"),
-           risk.table.y.text = FALSE,
-           xlab = "Time in Years",
-           censor = FALSE, fontsize = 3,
-           legend.title = "Initiation Period",
-           legend.labs = c("Before ICI Approval", "After ICI and Before ADC Approval", "After ADC Approval", "Before ICI Approval2", "After ICI and Before ADC Approval2", "After ADC Approval2", "Before ICI Approval3", "After ICI and Before ADC Approval3", "After ADC Approval3"))
-```
+<!-- ```{r} -->
+<!-- ggsurvplot(fit = fit.ipw.age, -->
+<!--            data = auc, -->
+<!--            xlim = c(0, 365.25 * 5), -->
+<!--            break.time.by = 365.25, -->
+<!--            xscale = "d_y", -->
+<!--            pval = TRUE, -->
+<!--            conf.int = TRUE, -->
+<!--            risk.table = TRUE, # Add risk table -->
+<!--            risk.table.col = "strata", # Change risk table color by groups -->
+<!--            # linetype = "strata", # Change line type by groups -->
+<!--            surv.median.line = "hv", # Specify median survival -->
+<!--            ggtheme = theme_bw(), # Change ggplot2 theme -->
+<!--            # palette = c("#E7B800", "#2E9FDF", "red"), -->
+<!--            risk.table.y.text = FALSE, -->
+<!--            xlab = "Time in Years", -->
+<!--            censor = FALSE, fontsize = 3, -->
+<!--            legend.title = "Initiation Period", -->
+<!--            legend.labs = c("Before ICI Approval", "After ICI and Before ADC Approval", "After ADC Approval", "Before ICI Approval2", "After ICI and Before ADC Approval2", "After ADC Approval2", "Before ICI Approval3", "After ICI and Before ADC Approval3", "After ADC Approval3")) -->
+<!-- ``` -->
 
-```{r age-3yr}
-summary(fit.ipw.age,  times = 365.25 * 3)
-```
-
-
-| Subgroup | Before ICI | Between ICI & ADC | After ADC |
-|----------|-------------------------|-------------------------|-------------------------|
-| < 65     | 0.238 (0.203, 0.274)     | 0.276 (0.240, 0.313)            | 0.317 (0.272, 0.362)    |
-| 65-74    | 0.222 (0.194, 0.252)     | 0.271 (0.242, 0.301)            | 0.321 (0.288, 0.355)    |
-| 75+      | 0.131 (0.117, 0.168)     | 0.178 (0.156, 0.201)            | 0.200 (0.175, 0.227)    |
-
-- 3-yr survival probability improved for all three cohorts over time.
-
-- The two younger cohorts have similar survival, much better than the 75+ group.
-
-## 6.2 Birth Sex group
-```{r subgroup-bsex}
-fit.ipw.bsex <- survfit(Surv(time = as.numeric(CensoringDate - Line1StartDate),
-                             event = Death) ~  BirthSex + Line1StartPeriod,
-                        data = auc,
-                        conf.type = "log-log",
-                        se.fit = TRUE,
-                        weights = wts1.mean)
-print(fit.ipw.bsex)
-```
-
-```{r}
-ggsurvplot(fit = fit.ipw.bsex,
-           data = auc,
-           xlim = c(0, 365.25 * 5),
-           break.time.by = 365.25,
-           xscale = "d_y",
-           pval = TRUE,
-           conf.int = TRUE,
-           risk.table = TRUE, # Add risk table
-           risk.table.col = "strata", # Change risk table color by groups
-           # linetype = "strata", # Change line type by groups
-           surv.median.line = "hv", # Specify median survival
-           ggtheme = theme_bw(), # Change ggplot2 theme
-           # palette = c("#E7B800", "#2E9FDF", "red"),
-           risk.table.y.text = FALSE,
-           xlab = "Time in Years",
-           censor = FALSE, fontsize = 3,
-           legend.title = "Initiation Period",
-           legend.labs = c("Before ICI Approval", "After ICI and Before ADC Approval", "After ADC Approval", "Before ICI Approval2", "After ICI and Before ADC Approval2", "After ADC Approval2"))
-```
-
-```{r bsex-3yr}
-summary(fit.ipw.bsex,  times = 365.25 * 3)
-```
+<!-- ```{r age-3yr} -->
+<!-- summary(fit.ipw.age,  times = 365.25 * 3) -->
+<!-- ``` -->
 
 
-| Subgroup | Before ICI | Between ICI & ADC | After ADC |
-|--------------|-------------------------|-------------------------|-------------------------|
-| Female birth sex    | 0.213 (0.178, 0.249)     | 0.235 (0.203, 0.268)            | 0.279 (0.244, 0.314)    |
-| Male birth sex   | 0.185 (0.166, 0.204)     | 0.233 (0.214, 0.252)            | 0.266 (0.243, 0.289)    |
+<!-- | Subgroup | Before ICI | Between ICI & ADC | After ADC | -->
+<!-- |----------|-------------------------|-------------------------|-------------------------| -->
+<!-- | < 65     | 0.238 (0.203, 0.274)     | 0.276 (0.240, 0.313)            | 0.317 (0.272, 0.362)    | -->
+<!-- | 65-74    | 0.222 (0.194, 0.252)     | 0.271 (0.242, 0.301)            | 0.321 (0.288, 0.355)    | -->
+<!-- | 75+      | 0.131 (0.117, 0.168)     | 0.178 (0.156, 0.201)            | 0.200 (0.175, 0.227)    | -->
 
-- Females have had better survival than males
+<!-- - 3-yr survival probability improved for all three cohorts over time. -->
 
-- Males have gained significantly better survival over time. 
+<!-- - The two younger cohorts have similar survival, much better than the 75+ group. -->
 
+<!-- ## 6.2 Birth Sex group -->
+<!-- ```{r subgroup-bsex} -->
+<!-- fit.ipw.bsex <- survfit(Surv(time = as.numeric(CensoringDate - Line1StartDate), -->
+<!--                              event = Death) ~  BirthSex + Line1StartPeriod, -->
+<!--                         data = auc, -->
+<!--                         conf.type = "log-log", -->
+<!--                         se.fit = TRUE, -->
+<!--                         weights = wts1.mean) -->
+<!-- print(fit.ipw.bsex) -->
+<!-- ``` -->
 
-## 6.3 Race group
-```{r subgroup-white}
-auc$white <- ifelse(auc$Race == "White", "White", "Non-White")
-fit.ipw.white <- survfit(Surv(time = as.numeric(CensoringDate - Line1StartDate),
-                              event = Death) ~ white + Line1StartPeriod,
-                         data = auc,
-                         conf.type = "log-log",
-                         se.fit = TRUE,
-                         weights = wts1.mean)
-print(fit.ipw.white)
-```
+<!-- ```{r} -->
+<!-- ggsurvplot(fit = fit.ipw.bsex, -->
+<!--            data = auc, -->
+<!--            xlim = c(0, 365.25 * 5), -->
+<!--            break.time.by = 365.25, -->
+<!--            xscale = "d_y", -->
+<!--            pval = TRUE, -->
+<!--            conf.int = TRUE, -->
+<!--            risk.table = TRUE, # Add risk table -->
+<!--            risk.table.col = "strata", # Change risk table color by groups -->
+<!--            # linetype = "strata", # Change line type by groups -->
+<!--            surv.median.line = "hv", # Specify median survival -->
+<!--            ggtheme = theme_bw(), # Change ggplot2 theme -->
+<!--            # palette = c("#E7B800", "#2E9FDF", "red"), -->
+<!--            risk.table.y.text = FALSE, -->
+<!--            xlab = "Time in Years", -->
+<!--            censor = FALSE, fontsize = 3, -->
+<!--            legend.title = "Initiation Period", -->
+<!--            legend.labs = c("Before ICI Approval", "After ICI and Before ADC Approval", "After ADC Approval", "Before ICI Approval2", "After ICI and Before ADC Approval2", "After ADC Approval2")) -->
+<!-- ``` -->
 
-```{r}
-ggsurvplot(fit = fit.ipw.white,
-           data = auc,
-           xlim = c(0, 365.25 * 5),
-           break.time.by = 365.25,
-           xscale = "d_y",
-           pval = TRUE,
-           conf.int = TRUE,
-           risk.table = TRUE, # Add risk table
-           risk.table.col = "strata", # Change risk table color by groups
-           # linetype = "strata", # Change line type by groups
-           surv.median.line = "hv", # Specify median survival
-           ggtheme = theme_bw(), # Change ggplot2 theme
-           # palette = c("#E7B800", "#2E9FDF", "red"),
-           risk.table.y.text = FALSE,
-           xlab = "Time in Years",
-           censor = FALSE, fontsize = 3,
-           legend.title = "Initiation Period",
-           legend.labs = c("Before ICI Approval", "After ICI and Before ADC Approval", "After ADC Approval", "Before ICI Approval2", "After ICI and Before ADC Approval2", "After ADC Approval2"))
-```
-
-```{r white-3yr}
-summary(fit.ipw.white,  times = 365.25 * 3)
-```
-
-| Subgroup | Before ICI | Between ICI & ADC | After ADC |
-|------------|-------------------------|-------------------------|-------------------------|
-| Non-white    | 0.220 (0.177, 0.267)     | 0.213 (0.178, 0.250)            | 0.252 (0.209, 0.296)    |
-| White   | 0.189 (0.171, 0.208)     | 0.241 (0.222, 0.261)            | 0.278 (0.255, 0.302)    |
-
-- Both groups have seen improved survival after ADC.
-
-## 6.4 ECOG performance status group
-```{r subgroup-ecog}
-fit.ipw.ecog <- survfit(Surv(time = as.numeric(CensoringDate - Line1StartDate),
-                             event = Death) ~ EcogValueAtLine1 + Line1StartPeriod,
-                        data = auc,
-                        conf.type = "log-log",
-                        se.fit = TRUE,
-                        weights = wts1.mean)
-print(fit.ipw.ecog)
-```
-
-```{r}
-ggsurvplot(fit = fit.ipw.ecog,
-           data = auc,
-           xlim = c(0, 365.25 * 5),
-           break.time.by = 365.25,
-           xscale = "d_y",
-           pval = TRUE,
-           conf.int = TRUE,
-           risk.table = TRUE, # Add risk table
-           risk.table.col = "strata", # Change risk table color by groups
-           # linetype = "strata", # Change line type by groups
-           surv.median.line = "hv", # Specify median survival
-           ggtheme = theme_bw(), # Change ggplot2 theme
-           # palette = c("#E7B800", "#2E9FDF", "red"),
-           risk.table.y.text = FALSE,
-           xlab = "Time in Years",
-           censor = FALSE, fontsize = 3,
-           legend.title = "Initiation Period",
-           legend.labs = c("Before ICI Approval", "After ICI and Before ADC Approval", "After ADC Approval", "Before ICI Approval2", "After ICI and Before ADC Approval2", "After ADC Approval2"))
-```
+<!-- ```{r bsex-3yr} -->
+<!-- summary(fit.ipw.bsex,  times = 365.25 * 3) -->
+<!-- ``` -->
 
 
-```{r ecog-3yr}
-summary(fit.ipw.ecog,  times = 365.25 * 3)
-```
+<!-- | Subgroup | Before ICI | Between ICI & ADC | After ADC | -->
+<!-- |--------------|-------------------------|-------------------------|-------------------------| -->
+<!-- | Female birth sex    | 0.213 (0.178, 0.249)     | 0.235 (0.203, 0.268)            | 0.279 (0.244, 0.314)    | -->
+<!-- | Male birth sex   | 0.185 (0.166, 0.204)     | 0.233 (0.214, 0.252)            | 0.266 (0.243, 0.289)    | -->
 
-| Subgroup | Before ICI | Between ICI & ADC | After ADC |
-|-------------|-------------------------|-------------------------|-------------------------|
-| ECOG PS <2    | 0.203 (0.177, 0.231)     | 0.253 (0.230, 0.276)            | 0.296 (0.271, 0.321)    |
-| ECOG PS >= 2   | 0.052 (0.027, 0.088)     | 0.100 (0.073, 0.133)            | 0.114 (0.080, 0.155)    |  
+<!-- - Females have had better survival than males -->
 
-- Survival in >=2 group more than doubled but still low.
+<!-- - Males have gained significantly better survival over time.  -->
 
-- Survival in <2 group improved after ICI and ADC.
+
+<!-- ## 6.3 Race group -->
+<!-- ```{r subgroup-white} -->
+<!-- auc$white <- ifelse(auc$Race == "White", "White", "Non-White") -->
+<!-- fit.ipw.white <- survfit(Surv(time = as.numeric(CensoringDate - Line1StartDate), -->
+<!--                               event = Death) ~ white + Line1StartPeriod, -->
+<!--                          data = auc, -->
+<!--                          conf.type = "log-log", -->
+<!--                          se.fit = TRUE, -->
+<!--                          weights = wts1.mean) -->
+<!-- print(fit.ipw.white) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- ggsurvplot(fit = fit.ipw.white, -->
+<!--            data = auc, -->
+<!--            xlim = c(0, 365.25 * 5), -->
+<!--            break.time.by = 365.25, -->
+<!--            xscale = "d_y", -->
+<!--            pval = TRUE, -->
+<!--            conf.int = TRUE, -->
+<!--            risk.table = TRUE, # Add risk table -->
+<!--            risk.table.col = "strata", # Change risk table color by groups -->
+<!--            # linetype = "strata", # Change line type by groups -->
+<!--            surv.median.line = "hv", # Specify median survival -->
+<!--            ggtheme = theme_bw(), # Change ggplot2 theme -->
+<!--            # palette = c("#E7B800", "#2E9FDF", "red"), -->
+<!--            risk.table.y.text = FALSE, -->
+<!--            xlab = "Time in Years", -->
+<!--            censor = FALSE, fontsize = 3, -->
+<!--            legend.title = "Initiation Period", -->
+<!--            legend.labs = c("Before ICI Approval", "After ICI and Before ADC Approval", "After ADC Approval", "Before ICI Approval2", "After ICI and Before ADC Approval2", "After ADC Approval2")) -->
+<!-- ``` -->
+
+<!-- ```{r white-3yr} -->
+<!-- summary(fit.ipw.white,  times = 365.25 * 3) -->
+<!-- ``` -->
+
+<!-- | Subgroup | Before ICI | Between ICI & ADC | After ADC | -->
+<!-- |------------|-------------------------|-------------------------|-------------------------| -->
+<!-- | Non-white    | 0.220 (0.177, 0.267)     | 0.213 (0.178, 0.250)            | 0.252 (0.209, 0.296)    | -->
+<!-- | White   | 0.189 (0.171, 0.208)     | 0.241 (0.222, 0.261)            | 0.278 (0.255, 0.302)    | -->
+
+<!-- - Both groups have seen improved survival after ADC. -->
+
+<!-- ## 6.4 ECOG performance status group -->
+<!-- ```{r subgroup-ecog} -->
+<!-- fit.ipw.ecog <- survfit(Surv(time = as.numeric(CensoringDate - Line1StartDate), -->
+<!--                              event = Death) ~ EcogValueAtLine1 + Line1StartPeriod, -->
+<!--                         data = auc, -->
+<!--                         conf.type = "log-log", -->
+<!--                         se.fit = TRUE, -->
+<!--                         weights = wts1.mean) -->
+<!-- print(fit.ipw.ecog) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- ggsurvplot(fit = fit.ipw.ecog, -->
+<!--            data = auc, -->
+<!--            xlim = c(0, 365.25 * 5), -->
+<!--            break.time.by = 365.25, -->
+<!--            xscale = "d_y", -->
+<!--            pval = TRUE, -->
+<!--            conf.int = TRUE, -->
+<!--            risk.table = TRUE, # Add risk table -->
+<!--            risk.table.col = "strata", # Change risk table color by groups -->
+<!--            # linetype = "strata", # Change line type by groups -->
+<!--            surv.median.line = "hv", # Specify median survival -->
+<!--            ggtheme = theme_bw(), # Change ggplot2 theme -->
+<!--            # palette = c("#E7B800", "#2E9FDF", "red"), -->
+<!--            risk.table.y.text = FALSE, -->
+<!--            xlab = "Time in Years", -->
+<!--            censor = FALSE, fontsize = 3, -->
+<!--            legend.title = "Initiation Period", -->
+<!--            legend.labs = c("Before ICI Approval", "After ICI and Before ADC Approval", "After ADC Approval", "Before ICI Approval2", "After ICI and Before ADC Approval2", "After ADC Approval2")) -->
+<!-- ``` -->
+
+
+<!-- ```{r ecog-3yr} -->
+<!-- summary(fit.ipw.ecog,  times = 365.25 * 3) -->
+<!-- ``` -->
+
+<!-- | Subgroup | Before ICI | Between ICI & ADC | After ADC | -->
+<!-- |-------------|-------------------------|-------------------------|-------------------------| -->
+<!-- | ECOG PS <2    | 0.203 (0.177, 0.231)     | 0.253 (0.230, 0.276)            | 0.296 (0.271, 0.321)    | -->
+<!-- | ECOG PS >= 2   | 0.052 (0.027, 0.088)     | 0.100 (0.073, 0.133)            | 0.114 (0.080, 0.155)    |   -->
+
+<!-- - Survival in >=2 group more than doubled but still low. -->
+
+<!-- - Survival in <2 group improved after ICI and ADC. -->
